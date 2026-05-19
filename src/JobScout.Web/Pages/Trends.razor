@@ -1,0 +1,173 @@
+@page "/trends"
+
+@inject MetricsService MetricsApi
+@inject ProfileStateService ProfileState
+@implements IDisposable
+
+<PageTitle>Trends — JobScout</PageTitle>
+
+<div class="main">
+    <div class="dashboard-header">
+        <div>
+            <span class="eyebrow"><i class="ti ti-chart-bar"></i> Analytics</span>
+            <h1>Trends</h1>
+            <p class="header-copy">Job market activity and your search performance over time.</p>
+        </div>
+    </div>
+
+    @if (_loading)
+    {
+        <div class="trends-grid">
+            @for (int i = 0; i < 4; i++)
+            {
+                <div class="skeleton" style="height:220px;border-radius:22px;"></div>
+            }
+        </div>
+    }
+    else
+    {
+        <div class="trends-grid">
+            <div class="chart-card">
+                <h3>Jobs Found (Last 30 Days)</h3>
+                <div class="bar-chart">
+                    @{
+                        var maxJobs = _trends.Any() ? _trends.Max(t => t.JobsFound) : 1;
+                    }
+                    @foreach (var day in _trends.TakeLast(14))
+                    {
+                        <div class="bar-row">
+                            <span>@(day.Date?.ToString("MMM d") ?? "-")</span>
+                            <div class="bar-fill">
+                                <span style="width:@(maxJobs > 0 ? day.JobsFound * 100 / maxJobs : 0)%;background:linear-gradient(90deg,var(--blue),#60a5fa)"></span>
+                            </div>
+                            <span>@day.JobsFound</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>Strong Fits Over Time</h3>
+                <div class="bar-chart">
+                    @{
+                        var maxFits = _trends.Any() ? _trends.Max(t => t.StrongFits) : 1;
+                    }
+                    @foreach (var day in _trends.TakeLast(14))
+                    {
+                        <div class="bar-row">
+                            <span>@(day.Date?.ToString("MMM d") ?? "-")</span>
+                            <div class="bar-fill">
+                                <span style="width:@(maxFits > 0 ? day.StrongFits * 100 / maxFits : 0)%;background:linear-gradient(90deg,var(--teal),#5eead4)"></span>
+                            </div>
+                            <span>@day.StrongFits</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>By Source</h3>
+                <div class="bar-chart">
+                    @{
+                        var maxSrc = _sources.Any() ? _sources.Max(s => s.JobCount) : 1;
+                    }
+                    @foreach (var src in _sources)
+                    {
+                        <div class="bar-row">
+                            <span>@src.Source</span>
+                            <div class="bar-fill">
+                                <span style="width:@(maxSrc > 0 ? src.JobCount * 100 / maxSrc : 0)%;background:linear-gradient(90deg,var(--violet),#a78bfa)"></span>
+                            </div>
+                            <span>@src.JobCount</span>
+                        </div>
+                    }
+                </div>
+            </div>
+
+            <div class="chart-card">
+                <h3>Best Posting Windows</h3>
+                <div class="bar-chart">
+                    @{
+                        var maxWin = _windows.Any() ? _windows.Max(w => w.JobCount) : 1;
+                    }
+                    @foreach (var w in _windows.Take(7))
+                    {
+                        <div class="bar-row">
+                            <span>@w.DayName</span>
+                            <div class="bar-fill">
+                                <span style="width:@(maxWin > 0 ? w.JobCount * 100 / maxWin : 0)%;background:linear-gradient(90deg,var(--amber),#fde68a)"></span>
+                            </div>
+                            <span>@w.JobCount</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @if (_stats is not null)
+        {
+            <div style="margin-top:24px;display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:16px">
+                <div class="stat-card">
+                    <i class="ti ti-briefcase"></i>
+                    <div class="stat-number">@_stats.JobsFound</div>
+                    <div class="stat-label">Total Jobs Found</div>
+                </div>
+                <div class="stat-card">
+                    <i class="ti ti-star"></i>
+                    <div class="stat-number">@_stats.StrongFits</div>
+                    <div class="stat-label">Strong Fits</div>
+                </div>
+                <div class="stat-card">
+                    <i class="ti ti-bookmark"></i>
+                    <div class="stat-number">@_stats.Saved</div>
+                    <div class="stat-label">Saved</div>
+                </div>
+                <div class="stat-card">
+                    <i class="ti ti-send"></i>
+                    <div class="stat-number">@_stats.Applied</div>
+                    <div class="stat-label">Applied</div>
+                </div>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    private IReadOnlyList<DashboardStatsDto> _trends = [];
+    private IReadOnlyList<SourceBreakdownDto> _sources = [];
+    private IReadOnlyList<PostingWindowDto> _windows = [];
+    private DashboardStatsDto? _stats;
+    private bool _loading = true;
+
+    protected override void OnInitialized()
+        => ProfileState.OnChange += OnProfileChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadAsync();
+    }
+
+    private async void OnProfileChanged()
+    {
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (ProfileState.ActiveProfile is null) return;
+        _loading = true;
+        StateHasChanged();
+
+        var id = ProfileState.ActiveProfile.Id;
+        _trends = await MetricsApi.GetTrendsAsync(id, 30);
+        _sources = await MetricsApi.GetSourceBreakdownAsync(id);
+        _windows = await MetricsApi.GetPostingWindowsAsync(id);
+        _stats = await MetricsApi.GetDashboardAsync(id);
+        _loading = false;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+        => ProfileState.OnChange -= OnProfileChanged;
+}

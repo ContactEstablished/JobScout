@@ -1,0 +1,224 @@
+@page "/profiles"
+
+@inject ProfilesService ProfilesApi
+@inject ProfileStateService ProfileState
+@inject ToastService Toast
+@implements IDisposable
+
+<PageTitle>Profiles — JobScout</PageTitle>
+
+<div class="main">
+    <div class="dashboard-header">
+        <div>
+            <span class="eyebrow"><i class="ti ti-user-circle"></i> Manage</span>
+            <h1>Search Profiles</h1>
+            <p class="header-copy">Each profile represents a different job search with its own resume, filters, and AI scoring.</p>
+        </div>
+    </div>
+
+    <div class="profiles-grid">
+        @foreach (var profile in ProfileState.Profiles)
+        {
+            <div class="profile-card @(profile.Id == ProfileState.ActiveProfile?.Id ? "active-profile" : "")">
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+                    <div style="width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,#1a2e3e,#0f4c75);display:grid;place-items:center;font-weight:800;font-size:1.1rem;border:1px solid rgba(255,255,255,0.12)">
+                        @profile.Name[..1].ToUpper()
+                    </div>
+                    <div>
+                        <h3 style="margin-bottom:2px">@profile.Name</h3>
+                        @if (profile.Id == ProfileState.ActiveProfile?.Id)
+                        {
+                            <span style="font-size:0.72rem;color:var(--teal);font-weight:800;letter-spacing:0.06em;text-transform:uppercase">Active</span>
+                        }
+                    </div>
+                </div>
+
+                @if (!string.IsNullOrEmpty(profile.Description))
+                {
+                    <p>@profile.Description</p>
+                }
+                else
+                {
+                    <p style="font-style:italic">No description set.</p>
+                }
+
+                @if (!string.IsNullOrEmpty(profile.ResumeFileName))
+                {
+                    <p style="font-size:0.82rem;color:var(--teal);margin-bottom:16px">
+                        <i class="ti ti-file-text"></i> @profile.ResumeFileName
+                    </p>
+                }
+
+                <div class="profile-actions">
+                    @if (profile.Id != ProfileState.ActiveProfile?.Id)
+                    {
+                        <button class="btn-sm" @onclick="() => ProfileState.SetActiveProfile(profile)">
+                            <i class="ti ti-check"></i> Set Active
+                        </button>
+                    }
+                    <button class="btn-sm" @onclick="() => StartEdit(profile)">
+                        <i class="ti ti-edit"></i> Edit
+                    </button>
+                    <button class="btn-sm danger" @onclick="() => DeleteAsync(profile.Id)">
+                        <i class="ti ti-trash"></i> Delete
+                    </button>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (_showForm)
+    {
+        <div class="form-card">
+            <h3>@(_editingId.HasValue ? "Edit Profile" : "New Profile")</h3>
+
+            <div class="field">
+                <label>Name</label>
+                <input type="text" @bind="_formName" placeholder="e.g. Senior Backend Engineer" />
+            </div>
+            <div class="field">
+                <label>Description</label>
+                <textarea @bind="_formDescription" placeholder="Describe this job search focus..."></textarea>
+            </div>
+            <div class="field">
+                <label>LinkedIn URL (optional)</label>
+                <input type="url" @bind="_formLinkedIn" placeholder="https://linkedin.com/in/..." />
+            </div>
+
+            <div class="field">
+                <label>Resume (optional — .txt, .pdf, .docx)</label>
+                <InputFile OnChange="OnFileSelected" accept=".txt,.pdf,.docx"
+                           style="display:none" id="resume-input" />
+                <div class="resume-zone" @onclick="ClickFileInput">
+                    @if (_selectedFile is not null)
+                    {
+                        <i class="ti ti-file-check" style="color:var(--teal)"></i>
+                        <p>@_selectedFile.Name</p>
+                    }
+                    else
+                    {
+                        <i class="ti ti-upload"></i>
+                        <p>Click to upload resume</p>
+                    }
+                </div>
+            </div>
+
+            <div style="display:flex;gap:10px;margin-top:8px">
+                <button class="btn-sm" @onclick="() => _showForm = false">Cancel</button>
+                <button class="btn-sm" style="border-color:rgba(32,230,207,0.42);background:rgba(32,230,207,0.10);color:var(--teal)"
+                        @onclick="SaveProfileAsync" disabled="@_saving">
+                    @if (_saving)
+                    {
+                        <i class="ti ti-loader"></i>
+                    }
+                    else
+                    {
+                        <i class="ti ti-device-floppy"></i>
+                    }
+                    Save
+                </button>
+            </div>
+        </div>
+    }
+
+    @if (!_showForm)
+    {
+        <button class="btn-sm" style="margin-top:20px" @onclick="StartCreate">
+            <i class="ti ti-plus"></i> New Profile
+        </button>
+    }
+</div>
+
+@code {
+    private bool _showForm;
+    private bool _saving;
+    private Guid? _editingId;
+    private string _formName = "";
+    private string? _formDescription;
+    private string? _formLinkedIn;
+    private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _selectedFile;
+
+    protected override void OnInitialized()
+        => ProfileState.OnChange += StateHasChanged;
+
+    private void StartCreate()
+    {
+        _editingId = null;
+        _formName = "";
+        _formDescription = null;
+        _formLinkedIn = null;
+        _selectedFile = null;
+        _showForm = true;
+    }
+
+    private void StartEdit(SearchProfileDto profile)
+    {
+        _editingId = profile.Id;
+        _formName = profile.Name;
+        _formDescription = profile.Description;
+        _formLinkedIn = profile.LinkedInUrl;
+        _selectedFile = null;
+        _showForm = true;
+    }
+
+    private async Task SaveProfileAsync()
+    {
+        if (string.IsNullOrWhiteSpace(_formName)) return;
+        _saving = true;
+
+        if (_editingId.HasValue)
+        {
+            var req = new UpdateProfileRequest
+            {
+                Name = _formName,
+                Description = _formDescription,
+                LinkedInUrl = _formLinkedIn,
+                IsActive = ProfileState.ActiveProfile?.Id == _editingId
+            };
+            await ProfilesApi.UpdateAsync(_editingId.Value, req);
+
+            if (_selectedFile is not null)
+                await ProfilesApi.UploadResumeAsync(_editingId.Value, _selectedFile);
+
+            var updated = await ProfilesApi.GetByIdAsync(_editingId.Value);
+            if (updated is not null) ProfileState.UpdateProfile(updated);
+            Toast.Show("Profile updated");
+        }
+        else
+        {
+            var req = new CreateProfileRequest
+            {
+                Name = _formName,
+                Description = _formDescription,
+                LinkedInUrl = _formLinkedIn
+            };
+            var created = await ProfilesApi.CreateAsync(req);
+            if (created is not null)
+            {
+                ProfileState.AddProfile(created);
+                if (_selectedFile is not null)
+                    await ProfilesApi.UploadResumeAsync(created.Id, _selectedFile);
+                Toast.Show("Profile created");
+            }
+        }
+
+        _saving = false;
+        _showForm = false;
+    }
+
+    private async Task DeleteAsync(Guid id)
+    {
+        await ProfilesApi.DeleteAsync(id);
+        ProfileState.RemoveProfile(id);
+        Toast.Show("Profile deleted");
+    }
+
+    private void OnFileSelected(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
+        => _selectedFile = e.File;
+
+    private async Task ClickFileInput()
+        => await Task.CompletedTask;
+
+    public void Dispose()
+        => ProfileState.OnChange -= StateHasChanged;
+}

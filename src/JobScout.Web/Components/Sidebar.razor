@@ -1,0 +1,57 @@
+@inject ProfileStateService ProfileState
+@implements IDisposable
+
+<nav class="sidebar">
+    <div class="side-section">
+        <div class="section-title"><span>Browse</span></div>
+        <NavLink href="/" class="nav-item" Match="NavLinkMatch.All" ActiveClass="active">
+            <div class="nav-icon"><i class="ti ti-briefcase"></i></div>
+            <span class="nav-label">All Jobs</span>
+        </NavLink>
+        <NavLink href="/strong-fit" class="nav-item" ActiveClass="active">
+            <div class="nav-icon"><i class="ti ti-star"></i></div>
+            <span class="nav-label">Strong Fit</span>
+        </NavLink>
+        <NavLink href="/saved" class="nav-item" ActiveClass="active">
+            <div class="nav-icon"><i class="ti ti-bookmark"></i></div>
+            <span class="nav-label">Saved</span>
+        </NavLink>
+        <NavLink href="/applied" class="nav-item" ActiveClass="active">
+            <div class="nav-icon"><i class="ti ti-send"></i></div>
+            <span class="nav-label">Applied</span>
+        </NavLink>
+    </div>
+
+    <div class="side-section">
+        <div class="section-title">
+            <span>Profiles</span>
+            <NavLink href="/profiles" class="profile-add" title="Manage profiles">
+                <i class="ti ti-settings"></i>
+            </NavLink>
+        </div>
+        @foreach (var profile in ProfileState.Profiles)
+        {
+            <button class="nav-item @(profile.Id == ProfileState.ActiveProfile?.Id ? "active" : "")"
+                    @onclick="() => ProfileState.SetActiveProfile(profile)">
+                <div class="nav-icon"><i class="ti ti-user-circle"></i></div>
+                <span class="nav-label">@profile.Name</span>
+            </button>
+        }
+    </div>
+
+    <div class="side-section">
+        <div class="section-title"><span>Analytics</span></div>
+        <NavLink href="/trends" class="nav-item" ActiveClass="active">
+            <div class="nav-icon"><i class="ti ti-chart-bar"></i></div>
+            <span class="nav-label">Trends</span>
+        </NavLink>
+    </div>
+</nav>
+
+@code {
+    protected override void OnInitialized()
+        => ProfileState.OnChange += StateHasChanged;
+
+    public void Dispose()
+        => ProfileState.OnChange -= StateHasChanged;
+}

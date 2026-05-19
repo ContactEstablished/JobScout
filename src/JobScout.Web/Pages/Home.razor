@@ -1,7 +1,226 @@
-﻿@page "/"
+@page "/"
+@page "/strong-fit"
+@page "/saved"
+@page "/applied"
 
-<PageTitle>Home</PageTitle>
+@inject JobsService JobsApi
+@inject ProfileStateService ProfileState
+@inject FilterStateService Filters
+@inject NavigationManager Nav
+@implements IDisposable
 
-<h1>Hello, world!</h1>
+<PageTitle>@PageTitle — JobScout</PageTitle>
 
-Welcome to your new app.
+<div class="main">
+    <div class="dashboard-header">
+        <div>
+            <span class="eyebrow"><i class="ti ti-radar"></i> Job Feed</span>
+            <h1>@PageTitle</h1>
+            <p class="header-copy">@PageSubtitle</p>
+        </div>
+    </div>
+
+    <div class="toolbar">
+        <div class="search-wrap">
+            <i class="ti ti-search"></i>
+            <input type="text" placeholder="Search jobs, companies, skills..."
+                   value="@Filters.SearchQuery"
+                   @onchange="OnSearchChanged"
+                   @onkeydown="OnSearchKeyDown" />
+        </div>
+        <button class="filter-button" @onclick="Filters.ToggleFilterPanel">
+            <i class="ti ti-adjustments-horizontal"></i>
+            Filters
+            @if (Filters.HasActiveFilters)
+            {
+                <span style="background:var(--teal);color:#03201e;border-radius:999px;padding:0 6px;font-size:0.75rem;font-weight:900;margin-left:4px">
+                    !
+                </span>
+            }
+        </button>
+    </div>
+
+    <div class="chips">
+        <NavLink href="/" Match="NavLinkMatch.All" class="chip" ActiveClass="active">
+            All Jobs
+        </NavLink>
+        <NavLink href="/strong-fit" class="chip" ActiveClass="active">
+            <i class="ti ti-star"></i> Strong Fit
+        </NavLink>
+        <NavLink href="/saved" class="chip" ActiveClass="active">
+            <i class="ti ti-bookmark"></i> Saved
+        </NavLink>
+        <NavLink href="/applied" class="chip" ActiveClass="active">
+            <i class="ti ti-send"></i> Applied
+        </NavLink>
+        @if (Filters.HasActiveFilters)
+        {
+            <button class="clear-filters" @onclick="OnClearFilters">× Clear</button>
+        }
+    </div>
+
+    @if (_loading && _jobs.Count == 0)
+    {
+        <div class="job-list">
+            @for (int i = 0; i < 4; i++)
+            {
+                <div class="skeleton" style="height:185px;border-radius:22px;"></div>
+            }
+        </div>
+    }
+    else if (VisibleJobs.Count == 0)
+    {
+        <div class="empty-state">
+            <i class="ti ti-search-off"></i>
+            <p>No jobs found. Try adjusting your filters or waiting for the next sync.</p>
+        </div>
+    }
+    else
+    {
+        <div class="job-list">
+            @foreach (var job in VisibleJobs)
+            {
+                <JobCard Job="job" />
+            }
+        </div>
+
+        @if (_hasMore && !IsSavedOrAppliedTab)
+        {
+            <button class="load-more" @onclick="LoadMoreAsync" disabled="@_loading">
+                @if (_loading)
+                {
+                    <i class="ti ti-loader" style="animation:spin 1s linear infinite"></i>
+                }
+                else
+                {
+                    <i class="ti ti-chevrons-down"></i>
+                }
+                Load more
+            </button>
+        }
+    }
+</div>
+
+@code {
+    private readonly List<JobSummaryDto> _jobs = [];
+    private int _page = 1;
+    private bool _hasMore;
+    private bool _loading;
+
+    private string CurrentPath => new Uri(Nav.Uri).AbsolutePath.TrimEnd('/').ToLower();
+    private bool IsSavedOrAppliedTab => CurrentPath is "/saved" or "/applied";
+
+    private string PageTitle => CurrentPath switch
+    {
+        "/strong-fit" => "Strong Fit",
+        "/saved"      => "Saved Jobs",
+        "/applied"    => "Applied",
+        _             => "All Jobs"
+    };
+
+    private string PageSubtitle => CurrentPath switch
+    {
+        "/strong-fit" => "Jobs where your AI score is 8 or higher.",
+        "/saved"      => "Jobs you have bookmarked for later.",
+        "/applied"    => "Jobs you've marked as applied.",
+        _             => "Your personalized job feed, scored and ranked by AI."
+    };
+
+    private List<JobSummaryDto> VisibleJobs => CurrentPath switch
+    {
+        "/saved"   => _jobs.Where(j => (j.UserRating?.Stars ?? 0) >= 4).ToList(),
+        "/applied" => _jobs.Where(j => (j.UserRating?.Stars ?? 0) == 5).ToList(),
+        _          => _jobs
+    };
+
+    protected override void OnInitialized()
+    {
+        ProfileState.OnChange += OnProfileChanged;
+        Filters.OnFiltersChanged += OnFiltersChanged;
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await ReloadAsync();
+    }
+
+    private async void OnProfileChanged()
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
+    private async void OnFiltersChanged()
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
+    private async void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        await ReloadAsync();
+        StateHasChanged();
+    }
+
+    private async Task ReloadAsync()
+    {
+        _jobs.Clear();
+        _page = 1;
+        _hasMore = false;
+        await FetchPageAsync();
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        _page++;
+        await FetchPageAsync();
+    }
+
+    private async Task FetchPageAsync()
+    {
+        if (ProfileState.ActiveProfile is null) return;
+        _loading = true;
+        StateHasChanged();
+
+        var filter = Filters.ToJobsFilter();
+
+        if (CurrentPath == "/strong-fit")
+            filter.MinScore = Math.Max(filter.MinScore ?? 0, 8m);
+
+        int pageSize = IsSavedOrAppliedTab ? 100 : 20;
+
+        var result = await JobsApi.GetJobsAsync(
+            ProfileState.ActiveProfile.Id, filter, _page, pageSize);
+
+        if (result is not null)
+        {
+            _jobs.AddRange(result.Items);
+            _hasMore = _page < result.TotalPages;
+        }
+
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private void OnSearchChanged(ChangeEventArgs e)
+        => Filters.SearchQuery = e.Value?.ToString();
+
+    private async Task OnSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") await ReloadAsync();
+    }
+
+    private async Task OnClearFilters()
+    {
+        Filters.Clear();
+        await ReloadAsync();
+    }
+
+    public void Dispose()
+    {
+        ProfileState.OnChange -= OnProfileChanged;
+        Filters.OnFiltersChanged -= OnFiltersChanged;
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

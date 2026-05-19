@@ -1,0 +1,164 @@
+@inject MetricsService MetricsApi
+@inject ProfileStateService ProfileState
+@inject ProfilesService ProfilesApi
+@implements IDisposable
+
+<div class="insights">
+    @if (_loading)
+    {
+        <div class="insights-section">
+            <div class="skeleton" style="height:160px;border-radius:18px;"></div>
+        </div>
+    }
+    else if (_stats is not null)
+    {
+        <div class="insights-section">
+            <div class="insights-title"><span>This Week</span></div>
+            <div class="stat-grid">
+                <div class="stat-card">
+                    <i class="ti ti-briefcase"></i>
+                    <div class="stat-number">@_stats.JobsFound</div>
+                    <div class="stat-label">Jobs Found</div>
+                    <div class="trend @TrendClass(_stats.JobsFoundDelta)">
+                        @DeltaText(_stats.JobsFoundDelta)
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="ti ti-star"></i>
+                    <div class="stat-number">@_stats.StrongFits</div>
+                    <div class="stat-label">Strong Fits</div>
+                    <div class="trend @TrendClass(_stats.StrongFitsDelta)">
+                        @DeltaText(_stats.StrongFitsDelta)
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="ti ti-bookmark"></i>
+                    <div class="stat-number">@_stats.Saved</div>
+                    <div class="stat-label">Saved</div>
+                    <div class="trend @TrendClass(_stats.SavedDelta)">
+                        @DeltaText(_stats.SavedDelta)
+                    </div>
+                </div>
+                <div class="stat-card">
+                    <i class="ti ti-send"></i>
+                    <div class="stat-number">@_stats.Applied</div>
+                    <div class="stat-label">Applied</div>
+                    <div class="trend @TrendClass(_stats.AppliedDelta)">
+                        @DeltaText(_stats.AppliedDelta)
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (_sources.Any())
+        {
+            <div class="insights-section">
+                <div class="insights-title"><span>By Source</span></div>
+                <div class="source-list">
+                    @{
+                        var maxJobs = _sources.Max(s => s.JobCount);
+                    }
+                    @foreach (var src in _sources.Take(5))
+                    {
+                        <div class="source-row">
+                            <div class="mini-logo" style="background:@SourceColor(src.Source.ToString())">
+                                @src.SourceName[..Math.Min(1, src.SourceName.Length)]
+                            </div>
+                            <span>@src.SourceName</span>
+                            <div class="bar">
+                                <span style="width:@(maxJobs > 0 ? (src.JobCount * 100 / maxJobs) : 0)%"></span>
+                            </div>
+                            <span>@src.JobCount</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (_windows.Any())
+        {
+            <div class="insights-section">
+                <div class="insights-title"><span>Best Posting Windows</span></div>
+                @foreach (var w in _windows.Take(2))
+                {
+                    <div class="posting-card" style="margin-bottom:12px">
+                        <div class="posting-top">
+                            <div class="clock-mark"><i class="ti ti-clock"></i></div>
+                            <div>
+                                <div class="posting-title">@w.DayName</div>
+                                <div class="posting-subtitle">~@w.JobCount jobs · @w.BestTimeWindow</div>
+                            </div>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+    }
+
+    <button class="recalibrate" @onclick="RecalibrateAsync">
+        <i class="ti ti-refresh" style="font-size:1.4rem;color:var(--teal)"></i>
+        <div>
+            <strong>Recalibrate AI</strong>
+            <div class="sub">Re-score all jobs for this profile</div>
+        </div>
+    </button>
+</div>
+
+@code {
+    private DashboardStatsDto? _stats;
+    private IReadOnlyList<SourceBreakdownDto> _sources = [];
+    private IReadOnlyList<PostingWindowDto> _windows = [];
+    private bool _loading = true;
+
+    protected override void OnInitialized()
+        => ProfileState.OnChange += OnProfileChanged;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await LoadAsync();
+    }
+
+    private async void OnProfileChanged()
+    {
+        await LoadAsync();
+        StateHasChanged();
+    }
+
+    private async Task LoadAsync()
+    {
+        if (ProfileState.ActiveProfile is null) return;
+        _loading = true;
+        StateHasChanged();
+
+        var id = ProfileState.ActiveProfile.Id;
+        _stats = await MetricsApi.GetDashboardAsync(id);
+        _sources = await MetricsApi.GetSourceBreakdownAsync(id);
+        _windows = await MetricsApi.GetPostingWindowsAsync(id);
+        _loading = false;
+        StateHasChanged();
+    }
+
+    private async Task RecalibrateAsync()
+    {
+        if (ProfileState.ActiveProfile is null) return;
+        await ProfilesApi.RecalibrateAsync(ProfileState.ActiveProfile.Id, new RecalibrateRequest());
+    }
+
+    private static string TrendClass(int delta) => delta > 0 ? "up" : delta < 0 ? "down" : "neutral";
+
+    private static string DeltaText(int delta)
+        => delta == 0 ? "No change" : $"{(delta > 0 ? "+" : "")}{delta} vs last week";
+
+    private static string SourceColor(string source) => source.ToLower() switch
+    {
+        "remoteok" => "#1a1a2e",
+        "adzuna" => "#1a3a2e",
+        "themuse" => "#1a1a3e",
+        "linkedin" => "#0a1929",
+        "indeed" => "#1a2a0a",
+        _ => "#1a1a1a"
+    };
+
+    public void Dispose()
+        => ProfileState.OnChange -= OnProfileChanged;
+}
