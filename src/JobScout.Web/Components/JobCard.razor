@@ -1,0 +1,178 @@
+@using System.Text.Json
+@inject ProfileStateService ProfileState
+@inject RatingsService RatingsApi
+@inject ToastService Toast
+
+<div class="job-card @(IsStrongFit ? "featured" : "")">
+    @if (IsStrongFit)
+    {
+        <div class="featured-ribbon">Top Match</div>
+    }
+
+    <div class="company-badge" style="background:@BadgeGradient(Job.Company)">
+        @Job.Company[..Math.Min(2, Job.Company.Length)].ToUpper()
+    </div>
+
+    <div class="job-body">
+        <div class="job-title-row">
+            <span class="job-title">@Job.Title</span>
+            <span class="source-pill">
+                <i class="ti ti-world"></i>
+                @Job.Source
+            </span>
+        </div>
+
+        <div class="job-meta">
+            <span>@Job.Company</span>
+            @if (!string.IsNullOrEmpty(Job.Location))
+            {
+                <span>·</span>
+                <span><i class="ti ti-map-pin"></i> @Job.Location</span>
+            }
+            <span>·</span>
+            <span><i class="ti ti-briefcase"></i> @FormatEnum(Job.LocationType.ToString())</span>
+            @if (!string.IsNullOrEmpty(Job.Salary))
+            {
+                <span>·</span>
+                <span><i class="ti ti-currency-dollar"></i> @Job.Salary</span>
+            }
+        </div>
+
+        @{
+            var tags = ParseTags(Job.Tags);
+        }
+        @if (tags.Count > 0)
+        {
+            <div class="tag-row">
+                @foreach (var tag in tags.Take(5))
+                {
+                    <span class="tag">@tag</span>
+                }
+            </div>
+        }
+
+        @if (!string.IsNullOrEmpty(Job.AiScore?.Reasoning))
+        {
+            <div class="match-copy">
+                <strong>AI Match Analysis</strong>
+                @Job.AiScore.Reasoning
+            </div>
+        }
+
+        <div class="job-footer">
+            @if (Job.PostedAt.HasValue)
+            {
+                <span>Posted @TimeAgo(Job.PostedAt.Value)</span>
+                <span>·</span>
+            }
+            <a href="@Job.SourceUrl" target="_blank" rel="noopener noreferrer">
+                View on @Job.Source <i class="ti ti-external-link" style="font-size:0.8em"></i>
+            </a>
+        </div>
+    </div>
+
+    <div class="job-actions">
+        <button class="save-button @(IsSaved ? "saved" : "")" @onclick="ToggleSaveAsync"
+                title="@(IsSaved ? "Unsave" : "Save")">
+            <i class="ti @(IsSaved ? "ti-bookmark-filled" : "ti-bookmark")"></i>
+        </button>
+
+        <div class="score-wrap">
+            @if (Job.AiScore is not null)
+            {
+                <div class="score-ring" style="--score:@ScorePercent">
+                    <span>@Job.AiScore.Score.ToString("F1")</span>
+                </div>
+                <div class="score-label">AI Score</div>
+            }
+
+            <div class="stars">
+                @for (int i = 1; i <= 5; i++)
+                {
+                    var star = i;
+                    <button class="star-btn @(_currentStars >= star ? "" : "empty")"
+                            @onclick="() => RateAsync(star)"
+                            title="@star stars">★</button>
+                }
+            </div>
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public JobSummaryDto Job { get; set; } = default!;
+
+    private int _currentStars;
+    private bool _savedOverride;
+    private bool _hasLocalSaveState;
+
+    private bool IsSaved => _hasLocalSaveState ? _savedOverride : (Job.UserRating?.Stars ?? 0) >= 4;
+    private int ScorePercent => Job.AiScore is not null ? (int)(Job.AiScore.Score * 10) : 0;
+    private bool IsStrongFit => (Job.AiScore?.Score ?? 0) >= 8m;
+
+    protected override void OnParametersSet()
+        => _currentStars = Job.UserRating?.Stars ?? 0;
+
+    private async Task ToggleSaveAsync()
+    {
+        if (ProfileState.ActiveProfile is null) return;
+        var newStars = IsSaved ? 1 : 5;
+        await SubmitRatingAsync(newStars);
+        _hasLocalSaveState = true;
+        _savedOverride = newStars >= 4;
+        Toast.Show(IsSaved ? "Job saved" : "Job unsaved");
+    }
+
+    private async Task RateAsync(int stars)
+    {
+        if (ProfileState.ActiveProfile is null) return;
+        _currentStars = stars;
+        await SubmitRatingAsync(stars);
+        if (stars >= 4)
+        {
+            _hasLocalSaveState = true;
+            _savedOverride = true;
+        }
+    }
+
+    private async Task SubmitRatingAsync(int stars)
+    {
+        if (ProfileState.ActiveProfile is null) return;
+        await RatingsApi.UpsertAsync(new UserRatingRequest
+        {
+            JobId = Job.Id,
+            ProfileId = ProfileState.ActiveProfile.Id,
+            Stars = stars
+        });
+    }
+
+    private static List<string> ParseTags(string json)
+    {
+        try { return JsonSerializer.Deserialize<List<string>>(json) ?? []; }
+        catch { return []; }
+    }
+
+    private static string TimeAgo(DateTime dt)
+    {
+        var diff = DateTime.UtcNow - dt.ToUniversalTime();
+        if (diff.TotalDays > 30) return $"{(int)(diff.TotalDays / 30)}mo ago";
+        if (diff.TotalDays >= 1) return $"{(int)diff.TotalDays}d ago";
+        if (diff.TotalHours >= 1) return $"{(int)diff.TotalHours}h ago";
+        return "Just now";
+    }
+
+    private static string BadgeGradient(string company)
+    {
+        var hash = company.Aggregate(0, (h, c) => h * 31 + c);
+        string[] froms = ["#0f4c75", "#1a2e1a", "#2d1a3e", "#1a2d3e", "#3e1a1a", "#1a3e2d", "#2e2a10"];
+        string[] tos   = ["#1b6ca8", "#14a085", "#7c3aed", "#0369a1", "#dc2626", "#059669", "#d97706"];
+        var idx = Math.Abs(hash) % froms.Length;
+        return $"linear-gradient(135deg, {froms[idx]}, {tos[idx]})";
+    }
+
+    private static string FormatEnum(string value)
+    {
+        if (string.IsNullOrEmpty(value)) return value;
+        return string.Concat(value.Select((c, i) => i > 0 && char.IsUpper(c) ? $" {c}" : c.ToString()));
+    }
+}

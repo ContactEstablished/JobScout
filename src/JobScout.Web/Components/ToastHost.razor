@@ -1,0 +1,59 @@
+@inject ToastService Toast
+@implements IDisposable
+
+@foreach (var t in _toasts)
+{
+    <div class="toast @(t.Visible ? "show" : "")" style="bottom:@(26 + _toasts.IndexOf(t) * 60)px">
+        <i class="ti @IconFor(t.Message.Type)" style="color:@ColorFor(t.Message.Type);margin-right:8px"></i>
+        @t.Message.Text
+    </div>
+}
+
+@code {
+    private readonly List<ToastEntry> _toasts = [];
+
+    protected override void OnInitialized()
+        => Toast.OnShow += OnShow;
+
+    private void OnShow(ToastMessage msg)
+    {
+        var entry = new ToastEntry(msg);
+        _toasts.Add(entry);
+        InvokeAsync(async () =>
+        {
+            StateHasChanged();
+            await Task.Delay(100);
+            entry.Visible = true;
+            StateHasChanged();
+            await Task.Delay(2500);
+            entry.Visible = false;
+            StateHasChanged();
+            await Task.Delay(250);
+            _toasts.Remove(entry);
+            StateHasChanged();
+        });
+    }
+
+    private static string IconFor(string type) => type switch
+    {
+        "error" => "ti-alert-circle",
+        "info"  => "ti-info-circle",
+        _       => "ti-circle-check"
+    };
+
+    private static string ColorFor(string type) => type switch
+    {
+        "error" => "var(--red)",
+        "info"  => "var(--blue)",
+        _       => "var(--teal)"
+    };
+
+    public void Dispose()
+        => Toast.OnShow -= OnShow;
+
+    private class ToastEntry(ToastMessage message)
+    {
+        public ToastMessage Message { get; } = message;
+        public bool Visible { get; set; }
+    }
+}

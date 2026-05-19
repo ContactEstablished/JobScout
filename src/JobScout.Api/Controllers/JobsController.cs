@@ -1,5 +1,4 @@
 using JobScout.Api.Mapping;
-using JobScout.Api.Models;
 using JobScout.Core.DTOs;
 using JobScout.Core.Enums;
 using JobScout.Core.Interfaces;

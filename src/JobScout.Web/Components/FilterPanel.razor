@@ -1,0 +1,90 @@
+@inject FilterStateService Filters
+@implements IDisposable
+
+<div class="drawer-backdrop @(Filters.IsFilterPanelOpen ? "open" : "")"
+     @onclick="Filters.CloseFilterPanel"></div>
+
+<div class="filter-panel @(Filters.IsFilterPanelOpen ? "open" : "")">
+    <h2>Filter Jobs</h2>
+    <p>Narrow down your job feed with these filters.</p>
+
+    <div class="filter-grid">
+        <div class="filter-field">
+            <label>Source</label>
+            <select @bind="Filters.Source">
+                <option value="">All Sources</option>
+                <option value="RemoteOK">RemoteOK</option>
+                <option value="Adzuna">Adzuna</option>
+                <option value="TheMuse">The Muse</option>
+                <option value="LinkedIn">LinkedIn</option>
+                <option value="Indeed">Indeed</option>
+                <option value="Glassdoor">Glassdoor</option>
+                <option value="Dice">Dice</option>
+                <option value="Wellfound">Wellfound</option>
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label>Min AI Score</label>
+            <select @bind="_minScoreStr">
+                <option value="">Any Score</option>
+                <option value="7">7+ (Good)</option>
+                <option value="8">8+ (Great)</option>
+                <option value="9">9+ (Excellent)</option>
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label>Location Type</label>
+            <select @bind="Filters.LocationType">
+                <option value="">All</option>
+                <option value="Remote">Remote</option>
+                <option value="Hybrid">Hybrid</option>
+                <option value="OnSite">On-Site</option>
+            </select>
+        </div>
+
+        <div class="filter-field">
+            <label>Job Type</label>
+            <select @bind="Filters.JobType">
+                <option value="">All</option>
+                <option value="FullTime">Full-Time</option>
+                <option value="PartTime">Part-Time</option>
+                <option value="Contract">Contract</option>
+                <option value="Freelance">Freelance</option>
+                <option value="Internship">Internship</option>
+            </select>
+        </div>
+    </div>
+
+    <div class="panel-actions">
+        <button class="ghost-button" @onclick="Clear">Clear</button>
+        <button class="primary-button" @onclick="Apply">Apply Filters</button>
+    </div>
+</div>
+
+@code {
+    private string? _minScoreStr
+    {
+        get => Filters.MinScore?.ToString();
+        set => Filters.MinScore = decimal.TryParse(value, out var d) ? d : null;
+    }
+
+    protected override void OnInitialized()
+        => Filters.OnPanelToggled += StateHasChanged;
+
+    private void Apply()
+    {
+        Filters.CloseFilterPanel();
+        Filters.Apply();
+    }
+
+    private void Clear()
+    {
+        Filters.CloseFilterPanel();
+        Filters.Clear();
+    }
+
+    public void Dispose()
+        => Filters.OnPanelToggled -= StateHasChanged;
+}

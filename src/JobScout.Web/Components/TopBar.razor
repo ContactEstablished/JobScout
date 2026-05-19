@@ -1,0 +1,82 @@
+@inject ProfileStateService ProfileState
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="topbar">
+    <button class="mobile-menu" @onclick="ToggleMobileDrawer" aria-label="Menu">
+        <i class="ti ti-menu-2"></i>
+    </button>
+
+    <div class="brand">
+        <div class="brand-mark">
+            <i class="ti ti-radar"></i>
+        </div>
+        <div class="brand-text">
+            <strong>JobScout</strong>
+            <span>AI Job Tracker</span>
+        </div>
+    </div>
+
+    @if (ProfileState.Profiles.Any())
+    {
+        <div class="profile-select" style="position:relative;">
+            <div class="pulse-dot"></div>
+            <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                @(ProfileState.ActiveProfile?.Name ?? "Select profile")
+            </span>
+            <i class="ti ti-chevron-down"></i>
+            <select style="position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%;"
+                    @onchange="OnProfileChanged">
+                @foreach (var p in ProfileState.Profiles)
+                {
+                    <option value="@p.Id" selected="@(p.Id == ProfileState.ActiveProfile?.Id)">@p.Name</option>
+                }
+            </select>
+        </div>
+    }
+
+    <div class="topbar-spacer"></div>
+
+    <div class="sync-pill">
+        <div class="pulse-dot"></div>
+        <span>Live</span>
+    </div>
+
+    <button class="icon-button" aria-label="Notifications">
+        <i class="ti ti-bell"></i>
+    </button>
+
+    <div class="user-pill">
+        <div class="avatar">@GetInitials()</div>
+        <span class="user-name">@(ProfileState.ActiveProfile?.Name ?? "Guest")</span>
+    </div>
+</div>
+
+@code {
+    protected override void OnInitialized()
+        => ProfileState.OnChange += StateHasChanged;
+
+    private string GetInitials()
+    {
+        var name = ProfileState.ActiveProfile?.Name ?? "?";
+        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 2
+            ? $"{parts[0][0]}{parts[^1][0]}"
+            : name.Length > 0 ? name[0].ToString().ToUpper() : "?";
+    }
+
+    private void OnProfileChanged(ChangeEventArgs e)
+    {
+        if (Guid.TryParse(e.Value?.ToString(), out var id))
+        {
+            var profile = ProfileState.Profiles.FirstOrDefault(p => p.Id == id);
+            if (profile is not null) ProfileState.SetActiveProfile(profile);
+        }
+    }
+
+    private async Task ToggleMobileDrawer()
+        => await JS.InvokeVoidAsync("eval", "document.body.classList.toggle('drawer-open')");
+
+    public void Dispose()
+        => ProfileState.OnChange -= StateHasChanged;
+}

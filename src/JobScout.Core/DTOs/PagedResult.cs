@@ -1,4 +1,4 @@
-namespace JobScout.Api.Models;
+namespace JobScout.Core.DTOs;
 
 public class PagedResult<T>
 {
