@@ -6,6 +6,12 @@
 # Claude Code local settings (never commit)
 .claude/settings.local.json
 
+# JobScout runtime files (never commit)
+jobscout.db
+jobscout.db-shm
+jobscout.db-wal
+functions/JobScout.Functions/local.settings.json
+
 # User-specific files
 *.rsuser
 *.suo
