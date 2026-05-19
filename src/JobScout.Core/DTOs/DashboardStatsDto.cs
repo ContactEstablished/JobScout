@@ -2,6 +2,7 @@ namespace JobScout.Core.DTOs;
 
 public class DashboardStatsDto
 {
+    public DateOnly? Date { get; set; }
     public int JobsFound { get; set; }
     public int StrongFits { get; set; }
     public int Saved { get; set; }
