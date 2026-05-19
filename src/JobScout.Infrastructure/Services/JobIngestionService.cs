@@ -1,0 +1,54 @@
+using JobScout.Core.Interfaces;
+using JobScout.Core.Models;
+using Microsoft.Extensions.Logging;
+
+namespace JobScout.Infrastructure.Services;
+
+public class JobIngestionService(
+    IEnumerable<IJobBoardClient> clients,
+    IJobRepository jobs,
+    ILogger<JobIngestionService> logger) : IJobIngestionService
+{
+    public async Task<IngestionResult> IngestAsync(SearchProfile profile)
+    {
+        var result = new IngestionResult();
+
+        // Fetch from all clients in parallel
+        var fetchTasks = clients
+            .Select(async c =>
+            {
+                try { return await c.FetchJobsAsync(profile); }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "Client {Client} failed", c.GetType().Name);
+                    return (IReadOnlyList<Job>)[];
+                }
+            });
+
+        var allFetched = (await Task.WhenAll(fetchTasks)).SelectMany(x => x).ToList();
+        logger.LogInformation("Ingestion: {Total} total jobs fetched across all sources", allFetched.Count);
+
+        // Deduplicate and save
+        foreach (var job in allFetched)
+        {
+            var existing = await jobs.GetByExternalIdAsync(job.ExternalId, job.Source);
+            if (existing is not null)
+            {
+                result.Duplicates++;
+                continue;
+            }
+
+            await jobs.AddAsync(job);
+
+            result.NewJobsFound++;
+            result.BySource.TryGetValue(job.Source.ToString(), out var count);
+            result.BySource[job.Source.ToString()] = count + 1;
+        }
+
+        logger.LogInformation(
+            "Ingestion complete: {New} new, {Dupes} duplicates",
+            result.NewJobsFound, result.Duplicates);
+
+        return result;
+    }
+}
