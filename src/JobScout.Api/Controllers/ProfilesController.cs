@@ -11,8 +11,18 @@ namespace JobScout.Api.Controllers;
 public class ProfilesController : ControllerBase
 {
     private readonly IProfileRepository _profiles;
+    private readonly IAiScoringService _scoring;
+    private readonly IJobIngestionService _ingestion;
 
-    public ProfilesController(IProfileRepository profiles) => _profiles = profiles;
+    public ProfilesController(
+        IProfileRepository profiles,
+        IAiScoringService scoring,
+        IJobIngestionService ingestion)
+    {
+        _profiles  = profiles;
+        _scoring   = scoring;
+        _ingestion = ingestion;
+    }
 
     [HttpGet]
     public async Task<ActionResult<IReadOnlyList<SearchProfileDto>>> GetAll()
@@ -120,8 +130,18 @@ public class ProfilesController : ControllerBase
         if (profile is null)
             return NotFound();
 
-        // IAiScoringService.RecalibrateAsync is wired in Phase 5.
-        // Return 202 Accepted so the Blazor UI can call this endpoint immediately.
-        return Accepted(new { message = "Recalibration queued. AI scoring service will be wired in Phase 5." });
+        await _scoring.RecalibrateAsync(id, request.ResetHistory);
+        return Accepted(new { message = "Recalibration complete." });
+    }
+
+    [HttpPost("{id:guid}/ingest")]
+    public async Task<IActionResult> Ingest(Guid id)
+    {
+        var profile = await _profiles.GetByIdAsync(id);
+        if (profile is null)
+            return NotFound();
+
+        var result = await _ingestion.IngestAsync(profile);
+        return Ok(result);
     }
 }
