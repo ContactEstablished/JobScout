@@ -1,0 +1,67 @@
+using JobScout.Core.Models;
+using Microsoft.EntityFrameworkCore;
+
+namespace JobScout.Infrastructure.Data;
+
+public class JobScoutDbContext : DbContext
+{
+    public JobScoutDbContext(DbContextOptions<JobScoutDbContext> options) : base(options) { }
+
+    public DbSet<SearchProfile> SearchProfiles => Set<SearchProfile>();
+    public DbSet<Job> Jobs => Set<Job>();
+    public DbSet<AiScore> AiScores => Set<AiScore>();
+    public DbSet<UserRating> UserRatings => Set<UserRating>();
+    public DbSet<DailyMetric> DailyMetrics => Set<DailyMetric>();
+    public DbSet<JobApplication> JobApplications => Set<JobApplication>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<Job>(entity =>
+        {
+            entity.HasKey(j => j.Id);
+            entity.Property(j => j.Tags).HasColumnType("TEXT");
+            entity.Property(j => j.Source).HasConversion<string>();
+            entity.Property(j => j.LocationType).HasConversion<string>();
+            entity.Property(j => j.JobType).HasConversion<string>();
+            entity.HasIndex(j => new { j.ExternalId, j.Source }).IsUnique();
+        });
+
+        modelBuilder.Entity<AiScore>(entity =>
+        {
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.MatchedKeywords).HasColumnType("TEXT");
+            entity.Property(a => a.Score).HasPrecision(4, 2);
+            entity.HasOne(a => a.Job).WithMany(j => j.AiScores).HasForeignKey(a => a.JobId);
+            entity.HasOne(a => a.Profile).WithMany(p => p.AiScores).HasForeignKey(a => a.ProfileId);
+        });
+
+        modelBuilder.Entity<UserRating>(entity =>
+        {
+            entity.HasKey(r => r.Id);
+            entity.HasIndex(r => new { r.JobId, r.ProfileId }).IsUnique();
+            entity.HasOne(r => r.Job).WithMany(j => j.UserRatings).HasForeignKey(r => r.JobId);
+            entity.HasOne(r => r.Profile).WithMany(p => p.UserRatings).HasForeignKey(r => r.ProfileId);
+        });
+
+        modelBuilder.Entity<DailyMetric>(entity =>
+        {
+            entity.HasKey(d => d.Id);
+            entity.Property(d => d.Source).HasConversion<string>();
+            entity.HasIndex(d => new { d.ProfileId, d.Date, d.Source }).IsUnique();
+            entity.HasOne(d => d.Profile).WithMany(p => p.DailyMetrics).HasForeignKey(d => d.ProfileId);
+        });
+
+        modelBuilder.Entity<SearchProfile>(entity =>
+        {
+            entity.HasKey(p => p.Id);
+        });
+
+        modelBuilder.Entity<JobApplication>(entity =>
+        {
+            entity.HasKey(a => a.Id);
+            entity.Property(a => a.Status).HasConversion<string>();
+        });
+    }
+}
