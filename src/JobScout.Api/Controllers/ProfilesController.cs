@@ -2,6 +2,7 @@ using JobScout.Api.Mapping;
 using JobScout.Core.DTOs;
 using JobScout.Core.Interfaces;
 using JobScout.Core.Models;
+using JobScout.Infrastructure.Parsing;
 using Microsoft.AspNetCore.Mvc;
 
 namespace JobScout.Api.Controllers;
@@ -102,25 +103,14 @@ public class ProfilesController : ControllerBase
         if (extension is not (".txt" or ".docx" or ".pdf"))
             return BadRequest("Only .txt, .docx, and .pdf files are supported.");
 
-        string resumeText;
-        if (extension == ".txt")
-        {
-            using var reader = new StreamReader(file.OpenReadStream());
-            resumeText = await reader.ReadToEndAsync();
-        }
-        else
-        {
-            // DOCX/PDF parsing is implemented in Phase 9 (ResumeParser).
-            // Store filename now; text extraction will be wired up then.
-            resumeText = string.Empty;
-        }
+        var parsed = await ResumeParser.ParseAsync(file.OpenReadStream(), extension);
 
         profile.ResumeFileName = file.FileName;
-        profile.ResumeText = resumeText;
+        profile.ResumeText = parsed.PlainText;
         profile.UpdatedAt = DateTime.UtcNow;
 
         await _profiles.UpdateAsync(profile);
-        return NoContent();
+        return Ok(new { parsed.WordCount, parsed.DetectedSkills });
     }
 
     [HttpPost("{id:guid}/recalibrate")]
