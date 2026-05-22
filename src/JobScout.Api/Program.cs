@@ -5,14 +5,19 @@ using JobScout.Infrastructure.ExternalServices;
 using JobScout.Infrastructure.Repositories;
 using JobScout.Infrastructure.Services;
 using Microsoft.EntityFrameworkCore;
+using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen(c =>
+builder.Services.AddOpenApi(options =>
 {
-    c.SwaggerDoc("v1", new() { Title = "JobScout API", Version = "v1" });
+    options.AddDocumentTransformer((document, context, cancellationToken) =>
+    {
+        document.Info.Title = "JobScout API";
+        document.Info.Version = "v1";
+        return Task.CompletedTask;
+    });
 });
 
 builder.Services.AddProblemDetails();
@@ -60,8 +65,8 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
 {
-    app.UseSwagger();
-    app.UseSwaggerUI();
+    app.MapOpenApi();
+    app.MapScalarApiReference();
 
     await DbSeeder.SeedAsync(app.Services);
 }

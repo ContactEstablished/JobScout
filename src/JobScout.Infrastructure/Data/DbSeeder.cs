@@ -14,6 +14,8 @@ public static class DbSeeder
         var db = scope.ServiceProvider.GetRequiredService<JobScoutDbContext>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<JobScoutDbContext>>();
 
+        await db.Database.MigrateAsync();
+
         if (await db.SearchProfiles.AnyAsync())
         {
             logger.LogInformation("Database already seeded — skipping.");
