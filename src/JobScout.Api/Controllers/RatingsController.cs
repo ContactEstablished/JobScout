@@ -2,12 +2,14 @@ using JobScout.Api.Mapping;
 using JobScout.Core.DTOs;
 using JobScout.Infrastructure.Data;
 using JobScout.Core.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace JobScout.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api")]
 public class RatingsController : ControllerBase
 {

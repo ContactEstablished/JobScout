@@ -12,6 +12,8 @@ public class SearchProfile
     public DateTime UpdatedAt { get; set; }
     public bool IsActive { get; set; }
 
+    public string UserId { get; set; } = string.Empty;
+
     public ICollection<Job> Jobs { get; set; } = [];
     public ICollection<AiScore> AiScores { get; set; } = [];
     public ICollection<UserRating> UserRatings { get; set; } = [];

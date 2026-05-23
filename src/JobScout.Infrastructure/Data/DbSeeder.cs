@@ -1,5 +1,7 @@
 using JobScout.Core.Enums;
 using JobScout.Core.Models;
+using JobScout.Infrastructure.Identity;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -12,6 +14,7 @@ public static class DbSeeder
     {
         using var scope = services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<JobScoutDbContext>();
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
         var logger = scope.ServiceProvider.GetRequiredService<ILogger<JobScoutDbContext>>();
 
         await db.Database.MigrateAsync();
@@ -24,6 +27,23 @@ public static class DbSeeder
 
         logger.LogInformation("Seeding development data...");
 
+        // Create dev user (dev@jobscout.local / DevPass123!)
+        var devUser = new ApplicationUser
+        {
+            UserName = "dev@jobscout.local",
+            Email = "dev@jobscout.local",
+            DisplayName = "Matthew Wilson",
+            CreatedAt = DateTime.UtcNow.AddDays(-30)
+        };
+
+        var createResult = await userManager.CreateAsync(devUser, "DevPass123!");
+        if (!createResult.Succeeded)
+        {
+            logger.LogError("Failed to create dev user: {Errors}",
+                string.Join(", ", createResult.Errors.Select(e => e.Description)));
+            return;
+        }
+
         var profileId = Guid.NewGuid();
         var now = DateTime.UtcNow;
 
@@ -32,6 +52,7 @@ public static class DbSeeder
             Id = profileId,
             Name = "Software Engineering",
             Description = "Senior .NET / Azure roles, open to remote or hybrid",
+            UserId = devUser.Id,
             ResumeText = """
                 Matthew Wilson — Senior Software Engineer
                 10 years of experience building cloud-native applications on Azure using C#, .NET, ASP.NET Core,

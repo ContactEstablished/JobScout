@@ -11,11 +11,15 @@ public class ProfileRepository : IProfileRepository
 
     public ProfileRepository(JobScoutDbContext db) => _db = db;
 
-    public async Task<IReadOnlyList<SearchProfile>> GetAllAsync() =>
-        await _db.SearchProfiles.OrderByDescending(p => p.IsActive).ThenBy(p => p.Name).ToListAsync();
+    public async Task<IReadOnlyList<SearchProfile>> GetAllAsync(string userId) =>
+        await _db.SearchProfiles
+            .Where(p => p.UserId == userId)
+            .OrderByDescending(p => p.IsActive)
+            .ThenBy(p => p.Name)
+            .ToListAsync();
 
-    public async Task<SearchProfile?> GetByIdAsync(Guid id) =>
-        await _db.SearchProfiles.FirstOrDefaultAsync(p => p.Id == id);
+    public async Task<SearchProfile?> GetByIdAsync(Guid id, string userId) =>
+        await _db.SearchProfiles.FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
 
     public async Task AddAsync(SearchProfile profile)
     {
@@ -29,9 +33,11 @@ public class ProfileRepository : IProfileRepository
         await _db.SaveChangesAsync();
     }
 
-    public async Task DeleteAsync(Guid id)
+    public async Task DeleteAsync(Guid id, string userId)
     {
-        var profile = await _db.SearchProfiles.FindAsync(id);
+        var profile = await _db.SearchProfiles
+            .FirstOrDefaultAsync(p => p.Id == id && p.UserId == userId);
+
         if (profile is not null)
         {
             _db.SearchProfiles.Remove(profile);
@@ -39,14 +45,14 @@ public class ProfileRepository : IProfileRepository
         }
     }
 
-    public async Task SetActiveAsync(Guid id)
+    public async Task SetActiveAsync(Guid id, string userId)
     {
-        await _db.SearchProfiles.ExecuteUpdateAsync(s =>
-            s.SetProperty(p => p.IsActive, false));
+        await _db.SearchProfiles
+            .Where(p => p.UserId == userId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.IsActive, false));
 
         await _db.SearchProfiles
-            .Where(p => p.Id == id)
-            .ExecuteUpdateAsync(s =>
-                s.SetProperty(p => p.IsActive, true));
+            .Where(p => p.Id == id && p.UserId == userId)
+            .ExecuteUpdateAsync(s => s.SetProperty(p => p.IsActive, true));
     }
 }
