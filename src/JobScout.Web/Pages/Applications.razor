@@ -1,0 +1,211 @@
+@page "/applications"
+
+@using JobScout.Core.Enums
+@inject ApplicationsService AppService
+@inject ProfileStateService ProfileState
+@inject ToastService Toast
+@implements IDisposable
+
+<PageTitle>Applications — JobScout</PageTitle>
+
+<div class="main">
+    <div class="dashboard-header">
+        <div>
+            <span class="eyebrow"><i class="ti ti-briefcase"></i> Track</span>
+            <h1>Applications</h1>
+            <p class="header-copy">Track your job applications from applied through to offer.</p>
+        </div>
+    </div>
+
+    @if (ProfileState.ActiveProfile is null)
+    {
+        <div class="empty-state">
+            <i class="ti ti-user-circle" style="font-size:2.5rem;color:var(--muted)"></i>
+            <p>Select an active profile to view applications.</p>
+        </div>
+    }
+    else if (_loading)
+    {
+        <div class="empty-state">
+            <i class="ti ti-loader" style="font-size:2rem;color:var(--muted)"></i>
+            <p>Loading applications...</p>
+        </div>
+    }
+    else
+    {
+        @* Pipeline summary *@
+        <div class="pipeline-bar">
+            <div class="pipeline-stat">
+                <span class="pipeline-count">@_pipeline.Applied</span>
+                <span class="pipeline-label">Applied</span>
+            </div>
+            <div class="pipeline-stat">
+                <span class="pipeline-count">@_pipeline.Interviewing</span>
+                <span class="pipeline-label">Interviewing</span>
+            </div>
+            <div class="pipeline-stat">
+                <span class="pipeline-count">@_pipeline.Offered</span>
+                <span class="pipeline-label">Offered</span>
+            </div>
+            <div class="pipeline-stat">
+                <span class="pipeline-count">@_pipeline.Accepted</span>
+                <span class="pipeline-label">Accepted</span>
+            </div>
+            <div class="pipeline-stat">
+                <span class="pipeline-count">@_pipeline.Rejected</span>
+                <span class="pipeline-label">Rejected</span>
+            </div>
+            <div class="pipeline-stat">
+                <span class="pipeline-count">@_pipeline.Withdrawn</span>
+                <span class="pipeline-label">Withdrawn</span>
+            </div>
+        </div>
+
+        @* Kanban board *@
+        <div class="kanban-board">
+            @foreach (var col in _columns)
+            {
+                var colApps = _applications.Where(a => a.Status == col).ToList();
+                <div class="kanban-column">
+                    <div class="kanban-column-header">
+                        <span>@col</span>
+                        <span class="kanban-count">@colApps.Count</span>
+                    </div>
+
+                    @foreach (var app in colApps)
+                    {
+                        var appRef = app;
+                        var daysInStage = (int)(DateTime.UtcNow - (app.StatusHistory.LastOrDefault()?.ChangedAt ?? app.AppliedAt)).TotalDays;
+
+                        <div class="kanban-card @(_expandedId == app.Id ? "expanded" : "")"
+                             @onclick="() => ToggleExpand(app.Id)">
+                            <div class="kanban-card-header">
+                                <h4>@(app.Job?.Title ?? "Unknown")</h4>
+                                <span class="kanban-days">@daysInStage d</span>
+                            </div>
+                            <p class="kanban-company">@(app.Job?.Company ?? "Unknown")</p>
+                            <p class="kanban-date">Applied @app.AppliedAt.ToString("MMM d, yyyy")</p>
+
+                            <div class="kanban-card-actions" @onclick:stopPropagation="true">
+                                <select class="kanban-status-select" value="@app.Status"
+                                        @onchange="e => OnStatusChange(appRef, e)">
+                                    @foreach (var s in Enum.GetValues<ApplicationStatus>())
+                                    {
+                                        <option value="@s" selected="@(s == app.Status)">@s</option>
+                                    }
+                                </select>
+                                <button class="btn-sm danger" @onclick="() => DeleteApp(appRef.Id)">
+                                    <i class="ti ti-trash"></i>
+                                </button>
+                            </div>
+
+                            @if (_expandedId == app.Id && app.StatusHistory.Count > 0)
+                            {
+                                <div class="timeline" @onclick:stopPropagation="true">
+                                    @foreach (var entry in app.StatusHistory.OrderByDescending(s => s.ChangedAt))
+                                    {
+                                        <div class="timeline-entry">
+                                            <div class="timeline-dot"></div>
+                                            <div class="timeline-content">
+                                                <span class="timeline-status">@entry.Status</span>
+                                                <span class="timeline-time">@entry.ChangedAt.ToString("MMM d, h:mm tt")</span>
+                                                @if (!string.IsNullOrEmpty(entry.Notes))
+                                                {
+                                                    <p class="timeline-notes">@entry.Notes</p>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    }
+
+                    @if (colApps.Count == 0)
+                    {
+                        <div class="kanban-empty">No applications</div>
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    private bool _loading = true;
+    private List<ApplicationDto> _applications = [];
+    private PipelineDto _pipeline = new();
+    private Guid? _expandedId;
+
+    private static readonly ApplicationStatus[] _columns =
+        [ApplicationStatus.Applied, ApplicationStatus.Interviewing, ApplicationStatus.Offered,
+         ApplicationStatus.Accepted, ApplicationStatus.Rejected];
+
+    protected override void OnInitialized()
+    {
+        ProfileState.OnChange += OnProfileChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadDataAsync();
+    }
+
+    private async void OnProfileChanged()
+    {
+        await LoadDataAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (ProfileState.ActiveProfile is null)
+        {
+            _loading = false;
+            return;
+        }
+
+        _loading = true;
+        StateHasChanged();
+
+        var profileId = ProfileState.ActiveProfile.Id;
+        _applications = (await AppService.GetByProfileAsync(profileId)).ToList();
+        _pipeline = await AppService.GetPipelineAsync(profileId);
+        _loading = false;
+    }
+
+    private void ToggleExpand(Guid id)
+    {
+        _expandedId = _expandedId == id ? null : id;
+    }
+
+    private async Task OnStatusChange(ApplicationDto app, ChangeEventArgs e)
+    {
+        if (Enum.TryParse<ApplicationStatus>(e.Value?.ToString(), out var newStatus) && newStatus != app.Status)
+        {
+            var success = await AppService.UpdateStatusAsync(app.Id,
+                new UpdateStatusRequest { Status = newStatus });
+            if (success)
+            {
+                Toast.Show($"Status updated to {newStatus}");
+                await LoadDataAsync();
+            }
+            else
+            {
+                Toast.Show($"Cannot transition to {newStatus}");
+            }
+        }
+    }
+
+    private async Task DeleteApp(Guid id)
+    {
+        await AppService.DeleteAsync(id);
+        Toast.Show("Application removed");
+        await LoadDataAsync();
+    }
+
+    public void Dispose()
+    {
+        ProfileState.OnChange -= OnProfileChanged;
+    }
+}
