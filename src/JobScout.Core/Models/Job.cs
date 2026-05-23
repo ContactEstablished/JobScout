@@ -22,4 +22,5 @@ public class Job
 
     public ICollection<AiScore> AiScores { get; set; } = [];
     public ICollection<UserRating> UserRatings { get; set; } = [];
+    public ICollection<JobApplication> Applications { get; set; } = [];
 }

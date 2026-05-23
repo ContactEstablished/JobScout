@@ -1,6 +1,7 @@
 @using System.Text.Json
 @inject ProfileStateService ProfileState
 @inject RatingsService RatingsApi
+@inject ApplicationsService AppService
 @inject ToastService Toast
 
 <div class="job-card @(IsStrongFit ? "featured" : "")">
@@ -68,7 +69,36 @@
             <a href="@Job.SourceUrl" target="_blank" rel="noopener noreferrer">
                 View on @Job.Source <i class="ti ti-external-link" style="font-size:0.8em"></i>
             </a>
+            <span>·</span>
+            @if (_applied)
+            {
+                <span class="applied-badge"><i class="ti ti-check"></i> Applied</span>
+            }
+            else
+            {
+                <button class="apply-link" @onclick="ShowApplyModal" @onclick:stopPropagation="true">
+                    <i class="ti ti-send"></i> Apply
+                </button>
+            }
         </div>
+
+        @if (_showApplyModal)
+        {
+            <div class="apply-modal" @onclick:stopPropagation="true">
+                <h4>Track Application</h4>
+                <p class="apply-confirm">@Job.Title at @Job.Company</p>
+                <div class="field">
+                    <label>Notes (optional)</label>
+                    <textarea @bind="_applyNotes" placeholder="Add notes about this application..."></textarea>
+                </div>
+                <div style="display:flex;gap:10px">
+                    <button class="btn-sm" @onclick="() => _showApplyModal = false">Cancel</button>
+                    <button class="btn-sm teal" @onclick="SubmitApplication" disabled="@_applying">
+                        <i class="ti ti-send"></i> Track & Open
+                    </button>
+                </div>
+            </div>
+        }
     </div>
 
     <div class="job-actions">
@@ -101,17 +131,25 @@
 
 @code {
     [Parameter, EditorRequired] public JobSummaryDto Job { get; set; } = default!;
+    [Parameter] public bool IsApplied { get; set; }
 
     private int _currentStars;
     private bool _savedOverride;
     private bool _hasLocalSaveState;
+    private bool _applied;
+    private bool _showApplyModal;
+    private bool _applying;
+    private string? _applyNotes;
 
     private bool IsSaved => _hasLocalSaveState ? _savedOverride : (Job.UserRating?.Stars ?? 0) >= 4;
     private int ScorePercent => Job.AiScore is not null ? (int)(Job.AiScore.Score * 10) : 0;
     private bool IsStrongFit => (Job.AiScore?.Score ?? 0) >= 8m;
 
     protected override void OnParametersSet()
-        => _currentStars = Job.UserRating?.Stars ?? 0;
+    {
+        _currentStars = Job.UserRating?.Stars ?? 0;
+        _applied = IsApplied;
+    }
 
     private async Task ToggleSaveAsync()
     {
@@ -144,6 +182,38 @@
             ProfileId = ProfileState.ActiveProfile.Id,
             Stars = stars
         });
+    }
+
+    private void ShowApplyModal()
+    {
+        _applyNotes = null;
+        _showApplyModal = true;
+    }
+
+    private async Task SubmitApplication()
+    {
+        if (ProfileState.ActiveProfile is null) return;
+        _applying = true;
+
+        var result = await AppService.CreateAsync(new CreateApplicationRequest
+        {
+            JobId = Job.Id,
+            ProfileId = ProfileState.ActiveProfile.Id,
+            Notes = _applyNotes
+        });
+
+        if (result is not null)
+        {
+            _applied = true;
+            Toast.Show("Application tracked");
+        }
+        else
+        {
+            Toast.Show("Could not track application");
+        }
+
+        _showApplyModal = false;
+        _applying = false;
     }
 
     private static List<string> ParseTags(string json)

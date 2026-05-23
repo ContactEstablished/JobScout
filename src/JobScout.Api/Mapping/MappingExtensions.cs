@@ -105,4 +105,21 @@ public static class MappingExtensions
         DetectedSkills = profile.DetectedSkills,
         ProfileColor = profile.ProfileColor
     };
+
+    public static ApplicationDto ToDto(this JobApplication app) => new()
+    {
+        Id = app.Id,
+        JobId = app.JobId,
+        ProfileId = app.ProfileId,
+        AppliedAt = app.AppliedAt,
+        Status = app.Status,
+        Notes = app.Notes,
+        StatusHistory = app.StatusHistory.Select(s => new StatusChangeDto
+        {
+            Status = s.Status,
+            ChangedAt = s.ChangedAt,
+            Notes = s.Notes
+        }).ToList(),
+        Job = app.Job?.ToSummaryDto(app.ProfileId)
+    };
 }

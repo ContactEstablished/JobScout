@@ -10,4 +10,16 @@ public class JobApplication
     public DateTime AppliedAt { get; set; }
     public ApplicationStatus Status { get; set; }
     public string? Notes { get; set; }
+    public List<StatusChange> StatusHistory { get; set; } = [];
+
+    // Navigation properties
+    public Job Job { get; set; } = null!;
+    public SearchProfile Profile { get; set; } = null!;
+}
+
+public class StatusChange
+{
+    public ApplicationStatus Status { get; set; }
+    public DateTime ChangedAt { get; set; }
+    public string? Notes { get; set; }
 }

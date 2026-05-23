@@ -94,7 +94,9 @@ builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 // Repositories
 builder.Services.AddScoped<IJobRepository, JobRepository>();
 builder.Services.AddScoped<IProfileRepository, ProfileRepository>();
+builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IMetricsService, MetricsService>();
+builder.Services.AddScoped<IApplicationTrackingService, ApplicationTrackingService>();
 
 // Job board clients
 builder.Services.AddHttpClient<RemoteOkClient>()

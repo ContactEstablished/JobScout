@@ -112,6 +112,20 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.HasKey(a => a.Id);
             entity.Property(a => a.Status).HasConversion<string>();
+            entity.HasIndex(a => new { a.JobId, a.ProfileId }).IsUnique();
+            entity.HasOne(a => a.Job).WithMany(j => j.Applications).HasForeignKey(a => a.JobId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(a => a.Profile).WithMany(p => p.Applications).HasForeignKey(a => a.ProfileId).OnDelete(DeleteBehavior.Cascade);
+
+            var statusChangeComparer = new ValueComparer<List<StatusChange>>(
+                (a, b) => a != null && b != null && a.SequenceEqual(b),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList());
+
+            entity.Property(a => a.StatusHistory).HasColumnType("TEXT")
+                  .HasConversion(
+                      v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                      v => System.Text.Json.JsonSerializer.Deserialize<List<StatusChange>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
+                  .Metadata.SetValueComparer(statusChangeComparer);
         });
     }
 }

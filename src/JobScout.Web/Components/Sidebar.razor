@@ -1,4 +1,5 @@
 @inject ProfileStateService ProfileState
+@inject ApplicationsService AppService
 @implements IDisposable
 
 <nav class="sidebar">
@@ -16,9 +17,17 @@
             <div class="nav-icon"><i class="ti ti-bookmark"></i></div>
             <span class="nav-label">Saved</span>
         </NavLink>
-        <NavLink href="/applied" class="nav-item" ActiveClass="active">
-            <div class="nav-icon"><i class="ti ti-send"></i></div>
-            <span class="nav-label">Applied</span>
+    </div>
+
+    <div class="side-section">
+        <div class="section-title"><span>Tracking</span></div>
+        <NavLink href="/applications" class="nav-item" ActiveClass="active">
+            <div class="nav-icon"><i class="ti ti-clipboard-list"></i></div>
+            <span class="nav-label">Applications</span>
+            @if (_activeAppCount > 0)
+            {
+                <span class="nav-badge">@_activeAppCount</span>
+            }
         </NavLink>
     </div>
 
@@ -49,9 +58,31 @@
 </nav>
 
 @code {
+    private int _activeAppCount;
+
     protected override void OnInitialized()
-        => ProfileState.OnChange += StateHasChanged;
+        => ProfileState.OnChange += OnProfileChanged;
+
+    protected override async Task OnInitializedAsync()
+        => await LoadAppCountAsync();
+
+    private async void OnProfileChanged()
+    {
+        await LoadAppCountAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadAppCountAsync()
+    {
+        if (ProfileState.ActiveProfile is null) { _activeAppCount = 0; return; }
+        try
+        {
+            var pipeline = await AppService.GetPipelineAsync(ProfileState.ActiveProfile.Id);
+            _activeAppCount = pipeline.Applied + pipeline.Interviewing + pipeline.Offered + pipeline.Accepted;
+        }
+        catch { _activeAppCount = 0; }
+    }
 
     public void Dispose()
-        => ProfileState.OnChange -= StateHasChanged;
+        => ProfileState.OnChange -= OnProfileChanged;
 }
