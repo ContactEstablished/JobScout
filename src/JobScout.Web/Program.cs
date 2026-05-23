@@ -35,5 +35,7 @@ builder.Services.AddHttpClient<MetricsService>(c => c.BaseAddress = new Uri(apiB
     .AddHttpMessageHandler<AuthTokenHandler>();
 builder.Services.AddHttpClient<ApplicationsService>(c => c.BaseAddress = new Uri(apiBaseUrl))
     .AddHttpMessageHandler<AuthTokenHandler>();
+builder.Services.AddHttpClient<NotificationsService>(c => c.BaseAddress = new Uri(apiBaseUrl))
+    .AddHttpMessageHandler<AuthTokenHandler>();
 
 await builder.Build().RunAsync();

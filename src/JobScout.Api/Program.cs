@@ -2,6 +2,7 @@ using System.Text;
 using JobScout.Core.Interfaces;
 using JobScout.Infrastructure.AI;
 using JobScout.Infrastructure.Data;
+using JobScout.Infrastructure.Email;
 using JobScout.Infrastructure.ExternalServices;
 using JobScout.Infrastructure.Identity;
 using JobScout.Infrastructure.Repositories;
@@ -97,6 +98,13 @@ builder.Services.AddScoped<IProfileRepository, ProfileRepository>();
 builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>();
 builder.Services.AddScoped<IMetricsService, MetricsService>();
 builder.Services.AddScoped<IApplicationTrackingService, ApplicationTrackingService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// Email
+if (!string.IsNullOrWhiteSpace(builder.Configuration["SendGrid:ApiKey"]))
+    builder.Services.AddSingleton<IEmailSender, SendGridEmailSender>();
+else
+    builder.Services.AddSingleton<IEmailSender, NullEmailSender>();
 
 // Job board clients
 builder.Services.AddHttpClient<RemoteOkClient>()

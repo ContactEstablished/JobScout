@@ -18,6 +18,7 @@ namespace JobScout.Infrastructure.AI;
 public class ClaudeAiScoringService(
     JobScoutDbContext db,
     IConfiguration config,
+    INotificationService notifications,
     ILogger<ClaudeAiScoringService> logger) : IAiScoringService
 {
     private const string DefaultModel = "claude-haiku-4-5-20251001";
@@ -81,6 +82,20 @@ public class ClaudeAiScoringService(
 
         logger.LogInformation("Batch scoring: {Count} jobs scored for profile {ProfileId}",
             scores.Count, profile.Id);
+
+        foreach (var score in scores.Where(s => s.Score >= 8m))
+        {
+            try
+            {
+                var job = jobList.FirstOrDefault(j => j.Id == score.JobId);
+                if (job is not null)
+                    await notifications.OnHighScoreCreatedAsync(score, job, profile);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to emit strong-fit notification for score {ScoreId}", score.Id);
+            }
+        }
 
         return scores;
     }

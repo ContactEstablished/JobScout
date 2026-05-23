@@ -1,0 +1,154 @@
+@page "/settings"
+@attribute [Authorize]
+@inject NotificationsService Notifications
+@inject ToastService Toast
+
+<PageTitle>Settings — JobScout</PageTitle>
+
+<div class="main">
+    <div class="dashboard-header">
+        <div>
+            <span class="eyebrow"><i class="ti ti-settings"></i> Account</span>
+            <h1>Settings</h1>
+            <p class="header-copy">Control how and when JobScout reaches you.</p>
+        </div>
+    </div>
+
+    @if (loading)
+    {
+        <div class="skeleton" style="height:240px;border-radius:22px;"></div>
+    }
+    else if (prefs is null)
+    {
+        <div class="empty-card">Could not load preferences. Try refreshing.</div>
+    }
+    else
+    {
+        <div class="settings-grid">
+            <section class="settings-card">
+                <h2><i class="ti ti-bell"></i> In-app notifications</h2>
+                <p class="settings-hint">Show these in the bell dropdown.</p>
+                <ToggleRow Label="New strong match" Description="Score 8.0 or above on a job."
+                           Checked="prefs.InAppNewStrongFit"
+                           CheckedChanged="v => prefs.InAppNewStrongFit = v" />
+                <ToggleRow Label="Score updates" Description="When existing scores are recalibrated."
+                           Checked="prefs.InAppScoreUpdate"
+                           CheckedChanged="v => prefs.InAppScoreUpdate = v" />
+                <ToggleRow Label="Ingestion summary" Description="After each fresh batch of jobs is ingested."
+                           Checked="prefs.InAppIngestionComplete"
+                           CheckedChanged="v => prefs.InAppIngestionComplete = v" />
+                <ToggleRow Label="Application status changes" Description="When you move a card across the pipeline."
+                           Checked="prefs.InAppApplicationStatusChange"
+                           CheckedChanged="v => prefs.InAppApplicationStatusChange = v" />
+            </section>
+
+            <section class="settings-card">
+                <h2><i class="ti ti-mail"></i> Email</h2>
+                <p class="settings-hint">Requires <code>SendGrid:ApiKey</code> to be configured.</p>
+                <ToggleRow Label="Daily digest" Description="Top strong fits from the last 24 hours."
+                           Checked="prefs.EmailDailyDigest"
+                           CheckedChanged="v => prefs.EmailDailyDigest = v" />
+                <ToggleRow Label="Weekly summary" Description="Pipeline and top-of-week snapshot every Monday."
+                           Checked="prefs.EmailWeeklySummary"
+                           CheckedChanged="v => prefs.EmailWeeklySummary = v" />
+                <ToggleRow Label="Instant strong match" Description="One email per job that scores 9.0+."
+                           Checked="prefs.EmailInstantStrongMatch"
+                           CheckedChanged="v => prefs.EmailInstantStrongMatch = v" />
+            </section>
+
+            <section class="settings-card">
+                <h2><i class="ti ti-moon"></i> Quiet hours</h2>
+                <p class="settings-hint">Emails are skipped during this window in your time zone.</p>
+                <div class="settings-row">
+                    <label class="settings-label">From</label>
+                    <input type="time" value="@FormatTime(prefs.QuietHoursStart)"
+                           @onchange="OnStartChanged" class="settings-input" />
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">To</label>
+                    <input type="time" value="@FormatTime(prefs.QuietHoursEnd)"
+                           @onchange="OnEndChanged" class="settings-input" />
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">Time zone</label>
+                    <input type="text" @bind="prefs.TimeZoneId" placeholder="e.g. America/New_York"
+                           class="settings-input" />
+                </div>
+                <button class="settings-clear" @onclick="ClearQuietHours">Clear quiet hours</button>
+            </section>
+        </div>
+
+        <div class="settings-actions">
+            <button class="btn-primary" @onclick="SaveAsync" disabled="@saving">
+                @(saving ? "Saving…" : "Save changes")
+            </button>
+        </div>
+    }
+</div>
+
+@code {
+    private NotificationPreferencesDto? prefs;
+    private bool loading = true;
+    private bool saving;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            prefs = await Notifications.GetPreferencesAsync();
+        }
+        catch
+        {
+            prefs = null;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (prefs is null) return;
+        saving = true;
+        try
+        {
+            var updated = await Notifications.UpdatePreferencesAsync(prefs);
+            if (updated is not null)
+            {
+                prefs = updated;
+                Toast.Show("Settings saved");
+            }
+            else
+            {
+                Toast.ShowError("Could not save settings");
+            }
+        }
+        finally { saving = false; }
+    }
+
+    private void OnStartChanged(ChangeEventArgs e)
+    {
+        if (prefs is null) return;
+        prefs.QuietHoursStart = ParseTime(e.Value?.ToString());
+    }
+
+    private void OnEndChanged(ChangeEventArgs e)
+    {
+        if (prefs is null) return;
+        prefs.QuietHoursEnd = ParseTime(e.Value?.ToString());
+    }
+
+    private void ClearQuietHours()
+    {
+        if (prefs is null) return;
+        prefs.QuietHoursStart = null;
+        prefs.QuietHoursEnd = null;
+    }
+
+    private static string FormatTime(TimeOnly? t)
+        => t.HasValue ? t.Value.ToString("HH:mm") : "";
+
+    private static TimeOnly? ParseTime(string? value)
+        => TimeOnly.TryParse(value, out var t) ? t : null;
+}

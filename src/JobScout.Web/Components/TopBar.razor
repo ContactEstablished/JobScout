@@ -44,9 +44,8 @@
         <span>Live</span>
     </div>
 
-    <button class="icon-button" aria-label="Notifications">
-        <i class="ti ti-bell"></i>
-    </button>
+    <NotificationDropdown />
+
 
     <div class="user-menu" @onclick="ToggleUserMenu" @onclick:stopPropagation="true">
         <div class="user-pill" role="button" aria-haspopup="true" aria-expanded="@showUserMenu">

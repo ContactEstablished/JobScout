@@ -3,6 +3,7 @@ using System;
 using JobScout.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace JobScout.Infrastructure.Migrations
 {
     [DbContext(typeof(JobScoutDbContext))]
-    partial class JobScoutDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260523121352_AddNotifications")]
+    partial class AddNotifications
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -22,29 +25,6 @@ namespace JobScout.Infrastructure.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("TEXT");
-
-                    b.Property<decimal?>("CompensationFitScore")
-                        .HasPrecision(4, 2)
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal?>("CultureFitScore")
-                        .HasPrecision(4, 2)
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal?>("EstimatedCostUsd")
-                        .HasPrecision(12, 6)
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal?>("ExperienceFitScore")
-                        .HasPrecision(4, 2)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("GrowthAreas")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<int?>("InputTokens")
-                        .HasColumnType("INTEGER");
 
                     b.Property<Guid>("JobId")
                         .HasColumnType("TEXT");
@@ -57,17 +37,10 @@ namespace JobScout.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<int?>("OutputTokens")
-                        .HasColumnType("INTEGER");
-
                     b.Property<Guid>("ProfileId")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Reasoning")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("RedFlags")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -76,10 +49,6 @@ namespace JobScout.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("ScoredAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal?>("SkillsMatchScore")
-                        .HasPrecision(4, 2)
                         .HasColumnType("TEXT");
 
                     b.HasKey("Id");
@@ -403,12 +372,6 @@ namespace JobScout.Infrastructure.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("TEXT");
 
-                    b.Property<decimal?>("DesiredSalaryMax")
-                        .HasColumnType("TEXT");
-
-                    b.Property<decimal?>("DesiredSalaryMin")
-                        .HasColumnType("TEXT");
-
                     b.Property<string>("DetectedSkills")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -432,9 +395,6 @@ namespace JobScout.Infrastructure.Migrations
 
                     b.Property<string>("PreferredLocationTypes")
                         .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("PreferredModel")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PreferredSources")

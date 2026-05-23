@@ -13,6 +13,7 @@ public class ApplicationTrackingService(
     IJobRepository jobs,
     IProfileRepository profiles,
     JobScoutDbContext db,
+    INotificationService notifications,
     ILogger<ApplicationTrackingService> logger) : IApplicationTrackingService
 {
     // Valid status transitions
@@ -84,6 +85,7 @@ public class ApplicationTrackingService(
             throw new InvalidOperationException(
                 $"Cannot transition from {app.Status} to {newStatus}.");
 
+        var oldStatus = app.Status;
         app.Status = newStatus;
         app.StatusHistory.Add(new StatusChange
         {
@@ -94,7 +96,16 @@ public class ApplicationTrackingService(
 
         await applications.UpdateAsync(app);
         logger.LogInformation("Application {AppId} status changed: {OldStatus} → {NewStatus}",
-            applicationId, app.Status, newStatus);
+            applicationId, oldStatus, newStatus);
+
+        try
+        {
+            await notifications.OnApplicationStatusChangedAsync(app, oldStatus, newStatus, userId);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to emit application-status notification for {AppId}", app.Id);
+        }
 
         return app;
     }
