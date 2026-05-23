@@ -35,6 +35,15 @@ public class MetricsService : IMetricsService
                 && r.RatedAt >= prevWeekStart.ToDateTime(TimeOnly.MinValue)
                 && r.RatedAt < weekStart.ToDateTime(TimeOnly.MinValue));
 
+        var weekStartUtc = weekStart.ToDateTime(TimeOnly.MinValue);
+        var aiCostThisWeek = await _db.AiScores
+            .Where(s => s.ProfileId == profileId && s.ScoredAt >= weekStartUtc && s.EstimatedCostUsd != null)
+            .SumAsync(s => s.EstimatedCostUsd ?? 0m);
+
+        var aiCostAllTime = await _db.AiScores
+            .Where(s => s.ProfileId == profileId && s.EstimatedCostUsd != null)
+            .SumAsync(s => s.EstimatedCostUsd ?? 0m);
+
         return new DashboardStatsDto
         {
             JobsFound = thisWeek.Sum(m => m.JobsFound),
@@ -44,7 +53,54 @@ public class MetricsService : IMetricsService
             JobsFoundDelta = thisWeek.Sum(m => m.JobsFound) - prevWeek.Sum(m => m.JobsFound),
             StrongFitsDelta = thisWeek.Sum(m => m.StrongFits) - prevWeek.Sum(m => m.StrongFits),
             SavedDelta = savedThisWeek - savedPrevWeek,
-            AppliedDelta = thisWeek.Sum(m => m.Applied) - prevWeek.Sum(m => m.Applied)
+            AppliedDelta = thisWeek.Sum(m => m.Applied) - prevWeek.Sum(m => m.Applied),
+            AiCostUsdThisWeek = aiCostThisWeek,
+            AiCostUsdAllTime = aiCostAllTime
+        };
+    }
+
+    public async Task<AiCostSummaryDto> GetAiCostSummaryAsync(Guid? profileId)
+    {
+        var query = _db.AiScores.AsQueryable();
+        if (profileId.HasValue)
+            query = query.Where(s => s.ProfileId == profileId.Value);
+
+        var scored = await query
+            .Where(s => s.ModelVersion != "default")
+            .Select(s => new
+            {
+                s.ModelVersion,
+                InputTokens = s.InputTokens ?? 0,
+                OutputTokens = s.OutputTokens ?? 0,
+                Cost = s.EstimatedCostUsd ?? 0m
+            })
+            .ToListAsync();
+
+        var byModel = scored
+            .GroupBy(s => s.ModelVersion)
+            .Select(g => new AiCostByModelDto
+            {
+                Model = g.Key,
+                ScoredJobCount = g.Count(),
+                InputTokens = g.Sum(s => s.InputTokens),
+                OutputTokens = g.Sum(s => s.OutputTokens),
+                CostUsd = g.Sum(s => s.Cost)
+            })
+            .OrderByDescending(m => m.CostUsd)
+            .ToList();
+
+        var totalCount = scored.Count;
+        var totalCost = scored.Sum(s => s.Cost);
+
+        return new AiCostSummaryDto
+        {
+            ProfileId = profileId,
+            ScoredJobCount = totalCount,
+            TotalInputTokens = scored.Sum(s => s.InputTokens),
+            TotalOutputTokens = scored.Sum(s => s.OutputTokens),
+            TotalCostUsd = totalCost,
+            AverageCostPerJobUsd = totalCount == 0 ? 0m : totalCost / totalCount,
+            ByModel = byModel
         };
     }
 

@@ -21,6 +21,11 @@ public class SearchProfileDto
     public string? LocationPreference { get; set; }
     public List<string> DetectedSkills { get; set; } = [];
     public string? ProfileColor { get; set; }
+
+    // Phase 5
+    public string? PreferredModel { get; set; }
+    public decimal? DesiredSalaryMin { get; set; }
+    public decimal? DesiredSalaryMax { get; set; }
 }
 
 public class CreateProfileRequest
@@ -36,6 +41,11 @@ public class CreateProfileRequest
     public List<string> PreferredLocationTypes { get; set; } = [];
     public string? LocationPreference { get; set; }
     public string? ProfileColor { get; set; }
+
+    // Phase 5
+    public string? PreferredModel { get; set; }
+    public decimal? DesiredSalaryMin { get; set; }
+    public decimal? DesiredSalaryMax { get; set; }
 }
 
 public class UpdateProfileRequest
@@ -52,6 +62,11 @@ public class UpdateProfileRequest
     public List<string> PreferredLocationTypes { get; set; } = [];
     public string? LocationPreference { get; set; }
     public string? ProfileColor { get; set; }
+
+    // Phase 5
+    public string? PreferredModel { get; set; }
+    public decimal? DesiredSalaryMin { get; set; }
+    public decimal? DesiredSalaryMax { get; set; }
 }
 
 public class UpdateSkillsRequest

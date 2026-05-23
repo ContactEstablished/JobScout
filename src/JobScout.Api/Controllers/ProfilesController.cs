@@ -66,7 +66,10 @@ public class ProfilesController : ControllerBase
             PreferredJobTypes = request.PreferredJobTypes,
             PreferredLocationTypes = request.PreferredLocationTypes,
             LocationPreference = request.LocationPreference,
-            ProfileColor = request.ProfileColor
+            ProfileColor = request.ProfileColor,
+            PreferredModel = request.PreferredModel,
+            DesiredSalaryMin = request.DesiredSalaryMin,
+            DesiredSalaryMax = request.DesiredSalaryMax
         };
 
         await _profiles.AddAsync(profile);
@@ -90,6 +93,9 @@ public class ProfilesController : ControllerBase
         profile.PreferredLocationTypes = request.PreferredLocationTypes;
         profile.LocationPreference = request.LocationPreference;
         profile.ProfileColor = request.ProfileColor;
+        profile.PreferredModel = request.PreferredModel;
+        profile.DesiredSalaryMin = request.DesiredSalaryMin;
+        profile.DesiredSalaryMax = request.DesiredSalaryMax;
         profile.UpdatedAt = DateTime.UtcNow;
 
         await _profiles.UpdateAsync(profile);
@@ -194,7 +200,10 @@ public class ProfilesController : ControllerBase
             PreferredLocationTypes = [.. source.PreferredLocationTypes],
             LocationPreference = source.LocationPreference,
             DetectedSkills = [.. source.DetectedSkills],
-            ProfileColor = source.ProfileColor
+            ProfileColor = source.ProfileColor,
+            PreferredModel = source.PreferredModel,
+            DesiredSalaryMin = source.DesiredSalaryMin,
+            DesiredSalaryMax = source.DesiredSalaryMax
         };
 
         await _profiles.AddAsync(clone);
