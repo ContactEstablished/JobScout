@@ -56,6 +56,46 @@
                            CheckedChanged="v => prefs.EmailInstantStrongMatch = v" />
             </section>
 
+            <section class="settings-card settings-card-wide">
+                <h2><i class="ti ti-key"></i> Integrations</h2>
+                <p class="settings-hint">API keys are encrypted on disk. Leave blank to keep the existing value; clear the field and save to remove a key.</p>
+                <div class="settings-row">
+                    <label class="settings-label">Anthropic (Claude scoring)</label>
+                    <input type="password" placeholder="@(integrationMask?.AnthropicApiKey ?? "not set")"
+                           @bind="integrationsEdit.AnthropicApiKey" class="settings-input" />
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">SerpAPI (LinkedIn / Indeed / Google Jobs)</label>
+                    <input type="password" placeholder="@(integrationMask?.SerpApiKey ?? "not set")"
+                           @bind="integrationsEdit.SerpApiKey" class="settings-input" />
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">Adzuna app id</label>
+                    <input type="text" placeholder="@(integrationMask?.AdzunaAppId ?? "not set")"
+                           @bind="integrationsEdit.AdzunaAppId" class="settings-input" />
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">Adzuna app key</label>
+                    <input type="password" placeholder="@(integrationMask?.AdzunaAppKey ?? "not set")"
+                           @bind="integrationsEdit.AdzunaAppKey" class="settings-input" />
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">SendGrid API key (email)</label>
+                    <input type="password" placeholder="@(integrationMask?.SendGridApiKey ?? "not set")"
+                           @bind="integrationsEdit.SendGridApiKey" class="settings-input" />
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">SendGrid from address</label>
+                    <input type="text" placeholder="@(integrationMask?.SendGridFromAddress ?? "no-reply@jobscout.local")"
+                           @bind="integrationsEdit.SendGridFromAddress" class="settings-input" />
+                </div>
+                <div class="settings-row">
+                    <label class="settings-label">Wellfound token</label>
+                    <input type="password" placeholder="@(integrationMask?.WellfoundAccessToken ?? "not set")"
+                           @bind="integrationsEdit.WellfoundAccessToken" class="settings-input" />
+                </div>
+            </section>
+
             <section class="settings-card">
                 <h2><i class="ti ti-moon"></i> Quiet hours</h2>
                 <p class="settings-hint">Emails are skipped during this window in your time zone.</p>
@@ -88,6 +128,8 @@
 
 @code {
     private NotificationPreferencesDto? prefs;
+    private IntegrationSettingsDto? integrationMask;
+    private IntegrationSettingsDto integrationsEdit = new();
     private bool loading = true;
     private bool saving;
 
@@ -96,6 +138,7 @@
         try
         {
             prefs = await Notifications.GetPreferencesAsync();
+            integrationMask = await Notifications.GetIntegrationsAsync();
         }
         catch
         {
@@ -113,19 +156,36 @@
         saving = true;
         try
         {
+            var prefsOk = false;
+            var integrationsOk = true;
+
             var updated = await Notifications.UpdatePreferencesAsync(prefs);
-            if (updated is not null)
+            if (updated is not null) { prefs = updated; prefsOk = true; }
+
+            if (HasIntegrationChanges())
             {
-                prefs = updated;
-                Toast.Show("Settings saved");
+                integrationsOk = await Notifications.UpdateIntegrationsAsync(integrationsEdit);
+                if (integrationsOk)
+                {
+                    integrationsEdit = new IntegrationSettingsDto();
+                    integrationMask = await Notifications.GetIntegrationsAsync();
+                }
             }
-            else
-            {
-                Toast.ShowError("Could not save settings");
-            }
+
+            if (prefsOk && integrationsOk) Toast.Show("Settings saved");
+            else Toast.ShowError("Could not save settings");
         }
         finally { saving = false; }
     }
+
+    private bool HasIntegrationChanges()
+        => integrationsEdit.AnthropicApiKey is not null
+        || integrationsEdit.SerpApiKey is not null
+        || integrationsEdit.AdzunaAppId is not null
+        || integrationsEdit.AdzunaAppKey is not null
+        || integrationsEdit.SendGridApiKey is not null
+        || integrationsEdit.SendGridFromAddress is not null
+        || integrationsEdit.WellfoundAccessToken is not null;
 
     private void OnStartChanged(ChangeEventArgs e)
     {

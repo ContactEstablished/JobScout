@@ -3,20 +3,20 @@ using System.Text.Json.Serialization;
 using JobScout.Core.Enums;
 using JobScout.Core.Interfaces;
 using JobScout.Core.Models;
-using Microsoft.Extensions.Configuration;
+using JobScout.Infrastructure.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace JobScout.Infrastructure.ExternalServices;
 
 public class SerpApiLinkedInClient(
     HttpClient http,
-    IConfiguration config,
+    ISecretStore secrets,
     ILogger<SerpApiLinkedInClient> logger) : IJobBoardClient
 {
     public JobSource Source => JobSource.LinkedIn;
     public async Task<IReadOnlyList<Job>> FetchJobsAsync(SearchProfile profile, CancellationToken ct = default)
     {
-        var apiKey = config["SerpApi:ApiKey"];
+        var apiKey = await secrets.GetAsync("SerpApi:ApiKey", ct);
         if (string.IsNullOrEmpty(apiKey))
         {
             logger.LogInformation("SerpAPI key not configured — skipping LinkedIn");

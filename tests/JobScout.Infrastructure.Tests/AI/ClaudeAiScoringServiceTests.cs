@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using Anthropic.SDK.Messaging;
 using JobScout.Infrastructure.AI;
+using JobScout.Infrastructure.Configuration;
 using JobScout.Infrastructure.Tests.Builders;
 using JobScout.Infrastructure.Tests.Fixtures;
 using Microsoft.Extensions.Configuration;
@@ -9,13 +10,16 @@ namespace JobScout.Infrastructure.Tests.AI;
 
 public class ClaudeAiScoringServiceTests
 {
-    private static IConfiguration BuildConfig(string? apiKey)
-        => new ConfigurationBuilder()
-            .AddInMemoryCollection(new Dictionary<string, string?>
-            {
-                ["Anthropic:ApiKey"] = apiKey
-            })
-            .Build();
+    private static IConfiguration BuildConfig()
+        => new ConfigurationBuilder().AddInMemoryCollection().Build();
+
+    private static ISecretStore BuildSecretStore(string? apiKey)
+    {
+        var store = Substitute.For<ISecretStore>();
+        store.GetAsync("Anthropic:ApiKey", Arg.Any<CancellationToken>())
+             .Returns(apiKey);
+        return store;
+    }
 
     private static MessageResponse BuildToolUseResponse(JsonObject toolInput, int inputTokens = 1200, int outputTokens = 240) => new()
     {
@@ -39,7 +43,7 @@ public class ClaudeAiScoringServiceTests
         await using var db = fixture.CreateContext();
         var factory = Substitute.For<IAnthropicClientFactory>();
         var notifications = Substitute.For<INotificationService>();
-        var service = new ClaudeAiScoringService(db, BuildConfig(null), factory, notifications, NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore(null), factory, notifications, NullLogger<ClaudeAiScoringService>.Instance);
 
         var job = new JobBuilder().Build();
         var profile = new ProfileBuilder().Build();
@@ -76,7 +80,7 @@ public class ClaudeAiScoringServiceTests
         factory.Create(Arg.Any<string>()).Returns(messenger);
 
         var notifications = Substitute.For<INotificationService>();
-        var service = new ClaudeAiScoringService(db, BuildConfig("test-key"), factory, notifications, NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore("test-key"), factory, notifications, NullLogger<ClaudeAiScoringService>.Instance);
 
         var score = await service.ScoreJobAsync(new JobBuilder().Build(), new ProfileBuilder().Build());
 
@@ -104,7 +108,7 @@ public class ClaudeAiScoringServiceTests
         var factory = Substitute.For<IAnthropicClientFactory>();
         factory.Create(Arg.Any<string>()).Returns(messenger);
 
-        var service = new ClaudeAiScoringService(db, BuildConfig("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
 
         var score = await service.ScoreJobAsync(new JobBuilder().Build(), new ProfileBuilder().Build());
 
@@ -124,7 +128,7 @@ public class ClaudeAiScoringServiceTests
         var factory = Substitute.For<IAnthropicClientFactory>();
         factory.Create(Arg.Any<string>()).Returns(messenger);
 
-        var service = new ClaudeAiScoringService(db, BuildConfig("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
 
         var score = await service.ScoreJobAsync(new JobBuilder().Build(), new ProfileBuilder().Build());
 
@@ -144,7 +148,7 @@ public class ClaudeAiScoringServiceTests
         var factory = Substitute.For<IAnthropicClientFactory>();
         factory.Create(Arg.Any<string>()).Returns(messenger);
 
-        var service = new ClaudeAiScoringService(db, BuildConfig("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
 
         var score = await service.ScoreJobAsync(new JobBuilder().Build(), new ProfileBuilder().Build());
 
@@ -167,7 +171,7 @@ public class ClaudeAiScoringServiceTests
         await db.SaveChangesAsync();
 
         var factory = Substitute.For<IAnthropicClientFactory>();
-        var service = new ClaudeAiScoringService(db, BuildConfig(null), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore(null), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
 
         var result = await service.BatchScoreAsync([job], profile);
 
@@ -199,7 +203,7 @@ public class ClaudeAiScoringServiceTests
         factory.Create(Arg.Any<string>()).Returns(messenger);
 
         var notifications = Substitute.For<INotificationService>();
-        var service = new ClaudeAiScoringService(db, BuildConfig("test-key"), factory, notifications, NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore("test-key"), factory, notifications, NullLogger<ClaudeAiScoringService>.Instance);
 
         await service.BatchScoreAsync([job], profile);
 
@@ -234,7 +238,7 @@ public class ClaudeAiScoringServiceTests
         factory.Create(Arg.Any<string>()).Returns(messenger);
 
         var notifications = Substitute.For<INotificationService>();
-        var service = new ClaudeAiScoringService(db, BuildConfig("test-key"), factory, notifications, NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore("test-key"), factory, notifications, NullLogger<ClaudeAiScoringService>.Instance);
 
         await service.BatchScoreAsync([job], profile);
 
@@ -260,7 +264,7 @@ public class ClaudeAiScoringServiceTests
         var factory = Substitute.For<IAnthropicClientFactory>();
         factory.Create(Arg.Any<string>()).Returns(messenger);
 
-        var service = new ClaudeAiScoringService(db, BuildConfig("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
 
         var score = await service.ScoreJobAsync(new JobBuilder().Build(), profile);
 
@@ -302,7 +306,7 @@ public class ClaudeAiScoringServiceTests
         var factory = Substitute.For<IAnthropicClientFactory>();
         factory.Create(Arg.Any<string>()).Returns(messenger);
 
-        var service = new ClaudeAiScoringService(db, BuildConfig("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
+        var service = new ClaudeAiScoringService(db, BuildConfig(), BuildSecretStore("test-key"), factory, Substitute.For<INotificationService>(), NullLogger<ClaudeAiScoringService>.Instance);
 
         await service.ScoreJobAsync(new JobBuilder().Build(), profile);
 

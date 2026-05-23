@@ -2,6 +2,7 @@
 @attribute [AllowAnonymous]
 @layout MinimalLayout
 @inject AuthService AuthApi
+@inject SetupService SetupApi
 @inject NavigationManager Nav
 @inject JwtAuthenticationStateProvider AuthState
 
@@ -42,6 +43,12 @@
     private LoginRequest model = new();
     private string? errorMessage;
     private bool isLoading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (await SetupApi.NeedsSetupAsync())
+            Nav.NavigateTo("/setup", forceLoad: false);
+    }
 
     private async Task HandleLogin()
     {

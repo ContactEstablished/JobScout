@@ -6,14 +6,14 @@ using System.Text.Json.Serialization;
 using JobScout.Core.Enums;
 using JobScout.Core.Interfaces;
 using JobScout.Core.Models;
-using Microsoft.Extensions.Configuration;
+using JobScout.Infrastructure.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace JobScout.Infrastructure.ExternalServices;
 
 public class WellfoundClient(
     HttpClient http,
-    IConfiguration config,
+    ISecretStore secrets,
     ILogger<WellfoundClient> logger) : IJobBoardClient
 {
     public JobSource Source => JobSource.Wellfound;
@@ -22,7 +22,7 @@ public class WellfoundClient(
 
     public async Task<IReadOnlyList<Job>> FetchJobsAsync(SearchProfile profile, CancellationToken ct = default)
     {
-        var token = config["Wellfound:AccessToken"];
+        var token = await secrets.GetAsync("Wellfound:AccessToken", ct);
         if (string.IsNullOrEmpty(token))
         {
             logger.LogInformation("Wellfound access token not configured — skipping");

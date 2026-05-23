@@ -1,8 +1,13 @@
+@using JobScout.Web.Services
 @inject NavigationManager Nav
+@inject SetupService SetupApi
 
 @code {
-    protected override void OnInitialized()
+    protected override async Task OnInitializedAsync()
     {
-        Nav.NavigateTo("/login", forceLoad: false);
+        // If this is a fresh install with no users, send the visitor to the wizard;
+        // otherwise the normal login flow.
+        var needsSetup = await SetupApi.NeedsSetupAsync();
+        Nav.NavigateTo(needsSetup ? "/setup" : "/login", forceLoad: false);
     }
 }

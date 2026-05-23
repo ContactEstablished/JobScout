@@ -9,7 +9,13 @@ var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
-var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "https://localhost:7007";
+// When the API hosts the SPA (the default local setup), ApiBaseUrl is empty
+// and we use the page's own origin via HostEnvironment.BaseAddress.
+// During standalone dev (Blazor's own dev server), set ApiBaseUrl in wwwroot/appsettings.json.
+var configuredApi = builder.Configuration["ApiBaseUrl"];
+var apiBaseUrl = string.IsNullOrWhiteSpace(configuredApi)
+    ? builder.HostEnvironment.BaseAddress
+    : configuredApi;
 
 // Auth
 builder.Services.AddScoped<JwtAuthenticationStateProvider>();
@@ -37,5 +43,6 @@ builder.Services.AddHttpClient<ApplicationsService>(c => c.BaseAddress = new Uri
     .AddHttpMessageHandler<AuthTokenHandler>();
 builder.Services.AddHttpClient<NotificationsService>(c => c.BaseAddress = new Uri(apiBaseUrl))
     .AddHttpMessageHandler<AuthTokenHandler>();
+builder.Services.AddHttpClient<SetupService>(c => c.BaseAddress = new Uri(apiBaseUrl));
 
 await builder.Build().RunAsync();

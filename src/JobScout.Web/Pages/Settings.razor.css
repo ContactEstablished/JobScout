@@ -5,6 +5,10 @@
     margin-top: 22px;
 }
 
+.settings-card-wide {
+    grid-column: 1 / -1;
+}
+
 .settings-card {
     background: var(--surface, #1d1f25);
     border: 1px solid var(--surface-border, #2a2c33);

@@ -1,7 +1,4 @@
 <Solution>
-  <Folder Name="/functions/">
-    <Project Path="functions/JobScout.Functions/JobScout.Functions.csproj" />
-  </Folder>
   <Folder Name="/src/">
     <Project Path="src/JobScout.Api/JobScout.Api.csproj" />
     <Project Path="src/JobScout.Core/JobScout.Core.csproj" />

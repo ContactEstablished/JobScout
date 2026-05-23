@@ -48,5 +48,14 @@ public class NotificationsService(HttpClient http)
         return await response.Content.ReadFromJsonAsync<NotificationPreferencesDto>();
     }
 
+    public virtual async Task<IntegrationSettingsDto?> GetIntegrationsAsync()
+        => await http.GetFromJsonAsync<IntegrationSettingsDto>("api/settings/integrations");
+
+    public virtual async Task<bool> UpdateIntegrationsAsync(IntegrationSettingsDto integrations)
+    {
+        var response = await http.PutAsJsonAsync("api/settings/integrations", integrations);
+        return response.IsSuccessStatusCode;
+    }
+
     private sealed record MarkAllResult(int Updated);
 }
