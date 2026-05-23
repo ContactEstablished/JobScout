@@ -2,6 +2,7 @@ using Azure.Monitor.OpenTelemetry.Exporter;
 using JobScout.Core.Interfaces;
 using JobScout.Infrastructure.AI;
 using JobScout.Infrastructure.Data;
+using JobScout.Infrastructure.Email;
 using JobScout.Infrastructure.ExternalServices;
 using JobScout.Infrastructure.Repositories;
 using JobScout.Infrastructure.Services;
@@ -46,5 +47,12 @@ builder.Services.AddTransient<IJobBoardClient, SerpApiLinkedInClient>();
 builder.Services.AddScoped<IJobIngestionService, JobIngestionService>();
 builder.Services.AddHttpClient<ClaudeAiScoringService>();
 builder.Services.AddScoped<IAiScoringService, ClaudeAiScoringService>();
+builder.Services.AddScoped<INotificationService, NotificationService>();
+
+// Email
+if (!string.IsNullOrWhiteSpace(builder.Configuration["SendGrid:ApiKey"]))
+    builder.Services.AddSingleton<IEmailSender, SendGridEmailSender>();
+else
+    builder.Services.AddSingleton<IEmailSender, NullEmailSender>();
 
 builder.Build().Run();

@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.*" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.*" />
     <PackageReference Include="PdfPig" Version="0.*" />
+    <PackageReference Include="SendGrid" Version="9.*" />
   </ItemGroup>
 
   <PropertyGroup>

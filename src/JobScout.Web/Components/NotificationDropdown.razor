@@ -1,0 +1,161 @@
+@using JobScout.Core.DTOs
+@using JobScout.Core.Enums
+@using JobScout.Web.Services
+@inject NotificationsService Notifications
+@inject NavigationManager Nav
+@implements IDisposable
+
+<div class="notif-wrap" @onclick:stopPropagation="true">
+    <button class="icon-button notif-bell" @onclick="Toggle" aria-label="Notifications" aria-expanded="@isOpen">
+        <i class="ti ti-bell"></i>
+        @if (unreadCount > 0)
+        {
+            <span class="notif-badge">@(unreadCount >= 10 ? "9+" : unreadCount.ToString())</span>
+        }
+    </button>
+
+    @if (isOpen)
+    {
+        <div class="notif-backdrop" @onclick="Close" @onclick:stopPropagation="true"></div>
+        <div class="notif-panel">
+            <div class="notif-header">
+                <span class="notif-title">Notifications</span>
+                <button class="notif-mark-all" @onclick="MarkAllRead" disabled="@(unreadCount == 0)">
+                    Mark all read
+                </button>
+            </div>
+
+            @if (loading)
+            {
+                <div class="notif-empty">Loading…</div>
+            }
+            else if (items.Count == 0)
+            {
+                <div class="notif-empty">
+                    <i class="ti ti-bell-off"></i>
+                    <span>You're all caught up.</span>
+                </div>
+            }
+            else
+            {
+                <div class="notif-list">
+                    @foreach (var n in items)
+                    {
+                        <button class="notif-item @(n.IsRead ? "" : "unread")"
+                                @onclick="() => OnClick(n)">
+                            <i class="ti @IconFor(n.Type) notif-item-icon"></i>
+                            <div class="notif-item-body">
+                                <div class="notif-item-title">@n.Title</div>
+                                <div class="notif-item-msg">@n.Message</div>
+                                <div class="notif-item-time">@RelativeTime(n.CreatedAt)</div>
+                            </div>
+                            @if (!n.IsRead)
+                            {
+                                <span class="notif-dot"></span>
+                            }
+                        </button>
+                    }
+                </div>
+            }
+
+            <div class="notif-footer">
+                <a href="/settings">Notification settings</a>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private bool isOpen;
+    private bool loading;
+    private int unreadCount;
+    private List<NotificationDto> items = [];
+    private System.Timers.Timer? pollTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshCountAsync();
+        StartPolling();
+    }
+
+    private void StartPolling()
+    {
+        pollTimer = new System.Timers.Timer(60_000);
+        pollTimer.Elapsed += async (_, _) =>
+        {
+            await RefreshCountAsync();
+            await InvokeAsync(StateHasChanged);
+        };
+        pollTimer.AutoReset = true;
+        pollTimer.Start();
+    }
+
+    private async Task RefreshCountAsync()
+    {
+        try { unreadCount = await Notifications.GetUnreadCountAsync(); }
+        catch { /* swallow — keep the badge from previous successful poll */ }
+    }
+
+    private async Task Toggle()
+    {
+        isOpen = !isOpen;
+        if (isOpen)
+        {
+            loading = true;
+            try { items = (await Notifications.GetAsync(unreadOnly: false, take: 10)).ToList(); }
+            catch { items = []; }
+            finally { loading = false; }
+        }
+    }
+
+    private void Close() => isOpen = false;
+
+    private async Task MarkAllRead()
+    {
+        if (unreadCount == 0) return;
+        await Notifications.MarkAllReadAsync();
+        unreadCount = 0;
+        foreach (var n in items) { n.IsRead = true; }
+    }
+
+    private async Task OnClick(NotificationDto n)
+    {
+        if (!n.IsRead)
+        {
+            await Notifications.MarkReadAsync(n.Id);
+            n.IsRead = true;
+            unreadCount = Math.Max(0, unreadCount - 1);
+        }
+        isOpen = false;
+
+        if (n.RelatedApplicationId.HasValue)
+            Nav.NavigateTo("/applications");
+        else if (n.RelatedJobId.HasValue)
+            Nav.NavigateTo($"/?jobId={n.RelatedJobId}");
+    }
+
+    private static string IconFor(NotificationType type) => type switch
+    {
+        NotificationType.NewStrongFit => "ti-star",
+        NotificationType.ScoreUpdate => "ti-refresh",
+        NotificationType.IngestionComplete => "ti-download",
+        NotificationType.ApplicationStatusChange => "ti-briefcase",
+        _ => "ti-bell"
+    };
+
+    private static string RelativeTime(DateTime utc)
+    {
+        var diff = DateTime.UtcNow - utc;
+        if (diff.TotalMinutes < 1) return "just now";
+        if (diff.TotalMinutes < 60) return $"{(int)diff.TotalMinutes}m ago";
+        if (diff.TotalHours < 24) return $"{(int)diff.TotalHours}h ago";
+        if (diff.TotalDays < 7) return $"{(int)diff.TotalDays}d ago";
+        return utc.ToLocalTime().ToString("MMM d");
+    }
+
+    public void Dispose()
+    {
+        pollTimer?.Stop();
+        pollTimer?.Dispose();
+    }
+}

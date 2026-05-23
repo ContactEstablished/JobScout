@@ -130,6 +130,20 @@ public static class MappingExtensions
         JsonPostedAtField = source.JsonPostedAtField
     };
 
+    public static NotificationDto ToDto(this Notification n) => new()
+    {
+        Id = n.Id,
+        ProfileId = n.ProfileId,
+        Type = n.Type,
+        Title = n.Title,
+        Message = n.Message,
+        IsRead = n.IsRead,
+        CreatedAt = n.CreatedAt,
+        ReadAt = n.ReadAt,
+        RelatedJobId = n.RelatedJobId,
+        RelatedApplicationId = n.RelatedApplicationId
+    };
+
     public static ApplicationDto ToDto(this JobApplication app) => new()
     {
         Id = app.Id,

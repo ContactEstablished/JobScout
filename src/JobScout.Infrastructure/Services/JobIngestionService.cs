@@ -8,6 +8,7 @@ public class JobIngestionService(
     IEnumerable<IJobBoardClient> clients,
     IJobRepository jobs,
     IDeduplicationService deduplication,
+    INotificationService notifications,
     ILogger<JobIngestionService> logger) : IJobIngestionService
 {
     public async Task<IngestionResult> IngestAsync(SearchProfile profile)
@@ -67,6 +68,15 @@ public class JobIngestionService(
         logger.LogInformation(
             "Ingestion complete: {New} new, {Dupes} exact duplicates, {Fuzzy} fuzzy duplicates",
             result.NewJobsFound, result.Duplicates, result.FuzzyDuplicates);
+
+        try
+        {
+            await notifications.OnIngestionCompleteAsync(profile, result);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to emit ingestion notification for profile {ProfileId}", profile.Id);
+        }
 
         return result;
     }

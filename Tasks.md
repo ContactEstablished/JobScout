@@ -1,8 +1,8 @@
-# Phase 4: Job Board Expansion
+# Phase 6: Notifications & Alerts
 
-**Priority: MEDIUM** | **Branch:** `phase4/job-board-expansion`
+**Priority: MEDIUM** | **Branch:** `phase6/notifications`
 
-> Reference: [Roadmap.md](Roadmap.md) — Phase 4 (sections 4.1 through 4.7)
+> Reference: [Roadmap.md](Roadmap.md) — Phase 6 (sections 6.1 through 6.3)
 
 ---
 
@@ -10,15 +10,16 @@
 
 | # | Task | Status |
 |---|------|--------|
-| 4.1 | IndeedClient via SerpAPI | DONE |
-| 4.2 | DiceClient via public search/RSS | DONE |
-| 4.3 | WellfoundClient via GraphQL | DONE |
-| 4.4 | GlassdoorClient or Google Jobs fallback | DONE |
-| 4.5 | Custom source support (entity + generic client) | DONE |
-| 4.6 | Cross-source fuzzy deduplication | DONE |
-| 4.7 | Canonical job linking | DONE |
-| 4.8 | End-to-end verification | DONE |
-| 4.9 | Commit & PR | TODO |
+| 6.1 | `Notification` entity + EF migration | DONE |
+| 6.2 | `NotificationService` + event hooks (ingestion, scoring, applications) | DONE |
+| 6.3 | `NotificationsController` REST endpoints | DONE |
+| 6.4 | Bell icon dropdown + unread-count badge in `TopBar.razor` | DONE |
+| 6.5 | `NotificationPreferences` entity + `Settings.razor` page | DONE |
+| 6.6 | `IEmailSender` + SendGrid implementation | DONE |
+| 6.7 | HTML email templates (digest, instant alert) | DONE |
+| 6.8 | Quiet hours + digest scheduler (Azure Function) | DONE |
+| 6.9 | End-to-end verification | DONE |
+| 6.10 | Commit & PR | DONE |
 
 ---
 
@@ -26,283 +27,274 @@
 
 The following already exist and should be leveraged:
 
-- **`IJobBoardClient` interface** — `src/JobScout.Core/Interfaces/IJobBoardClient.cs`
-  - `JobSource Source { get; }`
-  - `Task<IReadOnlyList<Job>> FetchJobsAsync(SearchProfile profile, CancellationToken ct = default)`
-- **Four live client implementations** — `src/JobScout.Infrastructure/ExternalServices/`
-  - `SerpApiLinkedInClient.cs` — reference implementation for the SerpAPI pattern
-  - `AdzunaClient.cs`, `RemoteOkClient.cs`, `TheMuseClient.cs`
-- **`JobSource` enum** — `src/JobScout.Core/Enums/JobSource.cs`
-  - Already defines: `LinkedIn`, `Indeed`, `Glassdoor`, `Dice`, `Wellfound`, `RemoteOK`, `Adzuna`, `TheMuse`
-  - No new enum values needed — all target sources are pre-declared
-- **`Job` entity source fields** — `src/JobScout.Core/Models/Job.cs`
-  - `ExternalId` (string), `Source` (JobSource), `SourceUrl` (string)
+- **`ApplicationUser`** — `src/JobScout.Infrastructure/Identity/ApplicationUser.cs`
+  - Identity user is already the per-user anchor; notifications and preferences hang off `UserId` (string).
+- **`JobScoutDbContext`** — `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs`
+  - Inherits from `IdentityDbContext<ApplicationUser>`. Add new `DbSet<Notification>` and `DbSet<NotificationPreferences>` here.
 - **`JobIngestionService`** — `src/JobScout.Infrastructure/Services/JobIngestionService.cs`
-  - Discovers all registered `IJobBoardClient` implementations via DI
-  - Current deduplication: exact match on `(ExternalId, Source)` only
-- **`Program.cs`** — clients are registered individually; each new client needs its own `AddScoped<IJobBoardClient, XyzClient>()` registration
+  - Fires after every ingestion run — hook `NotificationService.OnIngestionCompleteAsync` here.
+- **`ClaudeAiScoringService`** — `src/JobScout.Infrastructure/AI/ClaudeAiScoringService.cs`
+  - After scoring, emit a `NewStrongFit` notification when `Score >= 8` (and `>= 9` triggers an instant email if configured).
+- **`ApplicationTrackingService`** — `src/JobScout.Infrastructure/Services/ApplicationTrackingService.cs`
+  - On status transition, emit an `ApplicationStatusChange` notification.
+- **`TopBar.razor`** — `src/JobScout.Web/Components/TopBar.razor`
+  - Already renders a placeholder bell icon (`<i class="ti ti-bell">`). Replace its click handler with the new dropdown.
+- **`ICurrentUserService`** — `src/JobScout.Api/Services/CurrentUserService.cs`
+  - Resolves the authenticated `UserId` for scoping notifications and preferences.
+- **`Program.cs`** — `src/JobScout.Api/Program.cs`
+  - Services registered as `AddScoped<IInterface, Implementation>()`. Email sender registered as `AddSingleton<IEmailSender, SendGridEmailSender>()`.
+- **Azure Functions** — `functions/JobScout.Functions/`
+  - Already runs scheduled ingestion every 4 hours via timer trigger. Add the digest-email function alongside it.
 
 ---
 
 ## Task Details
 
-### 4.1 IndeedClient via SerpAPI
+### 6.1 Notification Entity & Migration
 
 **Files to create:**
-- `src/JobScout.Infrastructure/ExternalServices/SerpApiIndeedClient.cs`
-
-**Files to modify:**
-- `src/JobScout.Api/Program.cs` (DI registration)
-
-**Requirements:**
-- [ ] Create `SerpApiIndeedClient : IJobBoardClient` with `Source => JobSource.Indeed`
-- [ ] Model the implementation after `SerpApiLinkedInClient` — reuse SerpAPI base URL and API key config (`SerpApi:ApiKey`)
-- [ ] Set `engine=indeed` in the query string parameters
-- [ ] Build query from `profile.SearchKeywords` (joined with space) and `profile.PreferredLocations` if available
-- [ ] Map Indeed response fields to the `Job` entity:
-  - `job_id` → `ExternalId`
-  - `title` → `Title`
-  - `company_name` → `Company`
-  - `location` → `Location`
-  - `description` → `Description`
-  - `detected_extensions.salary` → `SalaryRange` (nullable)
-  - `detected_extensions.job_type` → `JobType`
-  - `date_posted` → `PostedAt`
-  - `related_links[0].link` → `SourceUrl`
-- [ ] Set `Source = JobSource.Indeed` on every mapped job
-- [ ] Register in `Program.cs`: `builder.Services.AddScoped<IJobBoardClient, SerpApiIndeedClient>()`
-- [ ] Add null/missing-field guards for all optional response properties
-
-**Acceptance criteria:** `SerpApiIndeedClient` fetches jobs and returns a non-empty list against the live SerpAPI endpoint. Jobs appear in the feed with `Source = Indeed`.
-
----
-
-### 4.2 DiceClient via Public Search Endpoint
-
-**Files to create:**
-- `src/JobScout.Infrastructure/ExternalServices/DiceClient.cs`
-
-**Files to modify:**
-- `src/JobScout.Api/Program.cs` (DI registration)
-- `appsettings.json` / user secrets (if Dice requires an API key)
-
-**Requirements:**
-- [ ] Create `DiceClient : IJobBoardClient` with `Source => JobSource.Dice`
-- [ ] Use Dice's public search API endpoint. Dice exposes a REST search endpoint at `https://job-search-api.skopenow.com` or the legacy `https://www.dice.com/jobs/q-{keyword}-jobs.rss` RSS feed — prefer REST if accessible without auth, fall back to RSS
-- [ ] If using REST: build query params from `profile.SearchKeywords`, map JSON response to `Job` entity
-- [ ] If using RSS/Atom: parse `<item>` elements using `System.ServiceModel.Syndication.SyndicationFeed` or a lightweight XML parser:
-  - `<title>` → `Title`
-  - `<author>` or `<dice:company>` → `Company`
-  - `<location>` or `<dice:location>` → `Location`
-  - `<description>` → `Description` (strip HTML tags)
-  - `<link>` → `SourceUrl`
-  - `<pubDate>` → `PostedAt`
-  - Generate `ExternalId` from a stable hash of `(Title + Company + SourceUrl)` if no explicit ID is in the feed
-- [ ] Register in `Program.cs`: `builder.Services.AddScoped<IJobBoardClient, DiceClient>()`
-
-**Acceptance criteria:** `DiceClient` returns mapped `Job` objects with `Source = Dice`. Build succeeds with 0 errors.
-
----
-
-### 4.3 WellfoundClient via GraphQL
-
-**Files to create:**
-- `src/JobScout.Infrastructure/ExternalServices/WellfoundClient.cs`
-
-**Files to modify:**
-- `src/JobScout.Api/Program.cs` (DI registration)
-- `appsettings.json` / user secrets (`Wellfound:AccessToken`)
-
-**Requirements:**
-- [ ] Create `WellfoundClient : IJobBoardClient` with `Source => JobSource.Wellfound`
-- [ ] Wellfound uses a GraphQL API at `https://wellfound.com/graphql`. Authentication requires a bearer token obtained via Wellfound's developer portal
-- [ ] Store the access token under `Wellfound:AccessToken` in configuration
-- [ ] Build a GraphQL query for job listings filtered by keywords from `profile.SearchKeywords`:
-  ```graphql
-  query JobSearch($query: String!) {
-    jobListings(query: $query, first: 50) {
-      edges {
-        node {
-          id
-          title
-          description
-          jobType
-          locationNames
-          salary
-          applyUrl
-          createdAt
-          startup {
-            name
-          }
-        }
-      }
-    }
-  }
-  ```
-- [ ] Send as a `POST` request with `Content-Type: application/json` and `Authorization: Bearer {token}`
-- [ ] Map GraphQL response to `Job` entity:
-  - `node.id` → `ExternalId`
-  - `node.title` → `Title`
-  - `node.startup.name` → `Company`
-  - `node.locationNames[0]` → `Location`
-  - `node.description` → `Description`
-  - `node.salary` → `SalaryRange`
-  - `node.jobType` → `JobType`
-  - `node.applyUrl` → `SourceUrl`
-  - `node.createdAt` → `PostedAt`
-- [ ] If GraphQL schema differs, adapt field names accordingly — document any discrepancies in code comments
-- [ ] Register in `Program.cs`: `builder.Services.AddScoped<IJobBoardClient, WellfoundClient>()`
-
-**Acceptance criteria:** `WellfoundClient` authenticates and returns startup-focused job listings with `Source = Wellfound`.
-
----
-
-### 4.4 GlassdoorClient or Google Jobs Fallback
-
-**Files to create:**
-- `src/JobScout.Infrastructure/ExternalServices/SerpApiGoogleJobsClient.cs` (fallback, preferred if Glassdoor partner access is unavailable)
-- _or_ `src/JobScout.Infrastructure/ExternalServices/GlassdoorClient.cs` (if partner API approved)
-
-**Files to modify:**
-- `src/JobScout.Api/Program.cs` (DI registration)
-
-**Requirements:**
-- [ ] **Preferred path — Google Jobs via SerpAPI:** Create `SerpApiGoogleJobsClient : IJobBoardClient` with `Source => JobSource.Glassdoor`
-  - Use `engine=google_jobs` SerpAPI parameter
-  - Build query from `profile.SearchKeywords`
-  - Map `google_jobs_listing` response fields to `Job`:
-    - `job_id` → `ExternalId`
-    - `title` → `Title`
-    - `company_name` → `Company`
-    - `location` → `Location`
-    - `description` → `Description`
-    - `detected_extensions.salary` → `SalaryRange`
-    - `detected_extensions.schedule_type` → `JobType`
-    - `detected_extensions.posted_at` → parse to `PostedAt`
-    - `related_links[0].link` → `SourceUrl`
-  - Reuse SerpAPI key from existing configuration
-- [ ] **Alternative path — Glassdoor partner API:** If partner access is obtained, create `GlassdoorClient` using their REST API. Store `Glassdoor:PartnerId` and `Glassdoor:PartnerKey` in configuration
-- [ ] Register whichever client is implemented in `Program.cs`
-
-**Acceptance criteria:** Client returns jobs attributed to `JobSource.Glassdoor`. SerpAPI key config is shared with existing LinkedIn client.
-
----
-
-### 4.5 Custom Source Support
-
-**Files to create:**
-- `src/JobScout.Core/Models/CustomJobSource.cs`
-- `src/JobScout.Infrastructure/ExternalServices/CustomSourceClient.cs`
-- EF Core migration: `AddCustomJobSource`
+- `src/JobScout.Core/Models/Notification.cs`
+- `src/JobScout.Core/Enums/NotificationType.cs`
+- `src/JobScout.Core/DTOs/NotificationDto.cs`
+- EF Core migration: `AddNotifications`
 
 **Files to modify:**
 - `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs`
-- `src/JobScout.Core/Enums/JobSource.cs`
-- `src/JobScout.Api/Program.cs`
+- `src/JobScout.Api/Mapping/MappingExtensions.cs`
 
 **Requirements:**
-- [ ] Add `Custom` value to `JobSource` enum
-- [ ] Create `CustomJobSource` entity:
+- [ ] Create `NotificationType` enum: `NewStrongFit`, `ScoreUpdate`, `IngestionComplete`, `ApplicationStatusChange`
+- [ ] Create `Notification` entity:
   - `Guid Id`
-  - `string Name` — display name for the source
-  - `string FeedUrl` — the RSS/Atom or JSON endpoint URL
-  - `FeedFormat Format` (new enum: `Rss`, `Atom`, `Json`)
-  - `string? JsonJobsPath` — dot-notation path to the jobs array in a JSON response (e.g., `"results.jobs"`)
-  - `string? JsonTitleField`, `JsonCompanyField`, `JsonLocationField`, `JsonDescriptionField`, `JsonUrlField`, `JsonPostedAtField` — field name mappings for JSON sources
-  - `string ProfileId` — FK to `SearchProfile` (custom sources are per-profile)
-  - `bool IsActive`
-  - `DateTimeOffset CreatedAt`
-- [ ] Register `DbSet<CustomJobSource>` in `JobScoutDbContext`
-- [ ] Configure FK: `CustomJobSource.ProfileId` → `SearchProfile.Id` (cascade delete)
-- [ ] Generate migration `AddCustomJobSource`
-- [ ] Create `CustomSourceClient : IJobBoardClient`:
-  - `Source => JobSource.Custom`
-  - Accepts `IEnumerable<CustomJobSource>` via DI or fetches from repository
-  - **RSS/Atom path:** Use `System.ServiceModel.Syndication.SyndicationFeed.Load()` — map `<item>` elements to `Job`
-  - **JSON path:** Use `System.Text.Json` with `JsonPath`-style traversal to locate the jobs array, then map fields using the configured `JsonXxxField` properties
-  - Set `ExternalId` = stable hash of `(Name + SourceUrl)` for feeds without explicit IDs
-  - Filter active custom sources belonging to the active profile before fetching
-- [ ] Add CRUD endpoints to an appropriate controller (or new `CustomSourcesController`):
-  - `GET /api/custom-sources?profileId=`
-  - `POST /api/custom-sources`
-  - `DELETE /api/custom-sources/{id}`
+  - `string UserId` — FK to `ApplicationUser.Id` (cascade delete)
+  - `Guid? ProfileId` — optional FK to `SearchProfile`
+  - `NotificationType Type`
+  - `string Title` (max 200)
+  - `string Message` (max 1000)
+  - `bool IsRead` (default false)
+  - `DateTime CreatedAt`
+  - `DateTime? ReadAt`
+  - `Guid? RelatedJobId` — nullable, no FK (jobs may be deleted)
+  - `Guid? RelatedApplicationId`
+- [ ] Register `DbSet<Notification>` in `JobScoutDbContext`
+- [ ] Configure indexes: `(UserId, IsRead, CreatedAt DESC)` for the unread query
+- [ ] Configure `Type` as string conversion (matches the existing enum pattern)
+- [ ] Generate migration `AddNotifications`
+- [ ] Add `NotificationDto` + `ToDto()` extension in `MappingExtensions`
 
-**Acceptance criteria:** A user can add an RSS feed URL, and jobs from that feed appear in the job feed under `Source = Custom`. Migration applies cleanly.
+**Acceptance criteria:** Migration applies cleanly. Inserting a notification row and querying by `UserId` returns it.
 
 ---
 
-### 4.6 Cross-Source Fuzzy Deduplication
+### 6.2 NotificationService + Event Hooks
 
 **Files to create:**
-- `src/JobScout.Infrastructure/Services/DeduplicationService.cs`
-- `src/JobScout.Core/Interfaces/IDeduplicationService.cs`
+- `src/JobScout.Core/Interfaces/INotificationService.cs`
+- `src/JobScout.Infrastructure/Services/NotificationService.cs`
 
 **Files to modify:**
 - `src/JobScout.Infrastructure/Services/JobIngestionService.cs`
-- `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs` (potential duplicate flag on `Job`)
-- `src/JobScout.Core/Models/Job.cs`
+- `src/JobScout.Infrastructure/AI/ClaudeAiScoringService.cs`
+- `src/JobScout.Infrastructure/Services/ApplicationTrackingService.cs`
+- `src/JobScout.Api/Program.cs`
 
 **Requirements:**
-- [ ] Add `bool IsPotentialDuplicate` and `Guid? DuplicateOfJobId` (nullable) fields to the `Job` entity
-- [ ] Generate migration `AddDuplicateFields`
-- [ ] Create `IDeduplicationService` with:
-  - `NormalizeTitle(string title) → string` — lowercase, strip punctuation, collapse whitespace, remove common stopwords (Sr., Junior, Remote, etc.)
-  - `NormalizeCompany(string company) → string` — lowercase, strip legal suffixes (Inc., LLC, Ltd.), collapse whitespace
-  - `Task<Guid?> FindDuplicateAsync(Job candidate, Guid profileId)` — returns the ID of an existing job if a fuzzy match is found, otherwise null
-- [ ] Fuzzy match criteria: `NormalizeTitle` match AND `NormalizeCompany` match AND same `Location` (normalized) across different `Source` values
-- [ ] Integrate into `JobIngestionService`:
-  - After the existing exact-match dedup check passes, run fuzzy duplicate check via `IDeduplicationService`
-  - If fuzzy match found: set `IsPotentialDuplicate = true` and `DuplicateOfJobId = matchedJob.Id` on the incoming job, then save it (do not discard — let the user review)
-  - Track fuzzy duplicate count separately in `IngestionResult`
-- [ ] Register `IDeduplicationService` in `Program.cs`
+- [ ] `INotificationService` surface:
+  - `Task CreateAsync(string userId, NotificationType type, string title, string message, Guid? profileId = null, Guid? jobId = null, Guid? applicationId = null)`
+  - `Task<IReadOnlyList<Notification>> GetForUserAsync(string userId, bool unreadOnly = false, int take = 50)`
+  - `Task<int> GetUnreadCountAsync(string userId)`
+  - `Task MarkReadAsync(Guid notificationId, string userId)`
+  - `Task MarkAllReadAsync(string userId)`
+  - `Task OnIngestionCompleteAsync(SearchProfile profile, IngestionResult result)`
+  - `Task OnHighScoreCreatedAsync(AiScore score, Job job)` — fires when `Score >= 8`
+  - `Task OnApplicationStatusChangedAsync(JobApplication app, ApplicationStatus oldStatus, ApplicationStatus newStatus)`
+- [ ] Hook `OnIngestionCompleteAsync` into `JobIngestionService` after the final `SaveChangesAsync` — only fire when `result.NewJobs > 0`
+- [ ] Hook `OnHighScoreCreatedAsync` into `ClaudeAiScoringService.BatchScoreAsync` — call it for each score that crosses the threshold
+- [ ] Hook `OnApplicationStatusChangedAsync` into `ApplicationTrackingService.UpdateStatusAsync`
+- [ ] Respect `NotificationPreferences` (Task 6.5): if the user has disabled a notification type, persist nothing
+- [ ] Register `INotificationService` as `AddScoped` in `Program.cs`
 
-**Acceptance criteria:** Jobs from two different sources with identical normalized titles and companies are flagged as potential duplicates. Exact-match deduplication still works unchanged.
+**Acceptance criteria:** A scored job with `Score >= 8` produces exactly one new `Notification` row. An ingestion with zero new jobs produces no notification. Status transitions on `JobApplication` produce one row each.
 
 ---
 
-### 4.7 Canonical Job Linking
+### 6.3 Notifications API Endpoints
+
+**Files to create:**
+- `src/JobScout.Api/Controllers/NotificationsController.cs`
 
 **Files to modify:**
-- `src/JobScout.Core/Models/Job.cs`
-- `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs`
-- `src/JobScout.Api/Controllers/JobsController.cs`
+- `src/JobScout.Api/Mapping/MappingExtensions.cs` (if not already covered by 6.1)
 
 **Requirements:**
-- [ ] Add `ICollection<string> AlternateSourceUrls` to `Job`, stored as JSON — collects additional source URLs when duplicates are confirmed
-- [ ] Generate migration `AddAlternateSourceUrls`
-- [ ] Add endpoint `POST /api/jobs/{id}/confirm-duplicate` — body: `{ duplicateJobId: Guid }`:
-  - Copies `duplicateJob.SourceUrl` into `primaryJob.AlternateSourceUrls`
-  - Sets `duplicateJob.IsPotentialDuplicate = true` and `duplicateJob.DuplicateOfJobId = id`
-  - Does not delete the secondary listing
-- [ ] Add endpoint `POST /api/jobs/{id}/dismiss-duplicate`:
-  - Clears `IsPotentialDuplicate` and `DuplicateOfJobId` on the specified job
-- [ ] Expose `IsPotentialDuplicate` and `AlternateSourceUrls` in the `JobDto`
+- [ ] `GET /api/notifications?unreadOnly=true&take=50` — returns `IReadOnlyList<NotificationDto>` for the current user
+- [ ] `GET /api/notifications/unread-count` — returns `{ count: int }`
+- [ ] `PUT /api/notifications/{id}/read` — marks one notification read; 404 if not owned by current user
+- [ ] `PUT /api/notifications/read-all` — marks every unread notification for the current user read
+- [ ] `DELETE /api/notifications/{id}` — hard-delete, scoped to current user
+- [ ] All endpoints `[Authorize]` and scoped via `ICurrentUserService.UserId`
 
-**Acceptance criteria:** Confirming a duplicate links the two records. The primary job's `AlternateSourceUrls` includes the secondary listing's URL. Dismissing clears the flag.
+**Acceptance criteria:** Authenticated user A cannot read or mutate user B's notifications (404 on every cross-tenant attempt).
 
 ---
 
-### 4.8 End-to-End Verification
+### 6.4 Bell Icon Dropdown UI
+
+**Files to create:**
+- `src/JobScout.Web/Components/NotificationDropdown.razor`
+- `src/JobScout.Web/Components/NotificationDropdown.razor.css`
+- `src/JobScout.Web/Services/NotificationApi.cs` (HTTP client wrapper)
+
+**Files to modify:**
+- `src/JobScout.Web/Components/TopBar.razor`
+- `src/JobScout.Web/Program.cs` (DI for `NotificationApi`)
+
+**Requirements:**
+- [ ] Replace the placeholder bell button in `TopBar.razor` (line 47) with a button that toggles `NotificationDropdown`
+- [ ] Render a numeric badge over the bell when `unreadCount > 0` (show "9+" when count >= 10)
+- [ ] Dropdown lists the most recent 10 notifications with: icon (per type), title, message preview, relative time ("3m ago"), and an unread dot for unread items
+- [ ] Clicking a notification: marks it read and navigates to the related job/application page (use `RelatedJobId` / `RelatedApplicationId` to build the route)
+- [ ] Dropdown header has a "Mark all read" button calling `PUT /api/notifications/read-all`
+- [ ] Footer "View all" link routes to a future `/notifications` page (out of scope for Phase 6; placeholder OK)
+- [ ] Poll `/api/notifications/unread-count` every 60s while the page is open
+- [ ] Match dark theme styling (use existing CSS variables)
+
+**Acceptance criteria:** Creating a notification via the API causes the badge to update within 60s. Clicking a notification marks it read and the badge decrements without a page refresh.
+
+---
+
+### 6.5 NotificationPreferences + Settings.razor
+
+**Files to create:**
+- `src/JobScout.Core/Models/NotificationPreferences.cs`
+- `src/JobScout.Core/DTOs/NotificationPreferencesDto.cs`
+- `src/JobScout.Api/Controllers/SettingsController.cs`
+- `src/JobScout.Web/Pages/Settings.razor`
+- `src/JobScout.Web/Pages/Settings.razor.css`
+- EF Core migration: `AddNotificationPreferences`
+
+**Files to modify:**
+- `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs`
+- `src/JobScout.Web/Components/Sidebar.razor` (add "Settings" nav entry)
+
+**Requirements:**
+- [ ] `NotificationPreferences` entity (one row per `ApplicationUser`):
+  - `string UserId` — PK, FK to `ApplicationUser`
+  - `bool InAppNewStrongFit` (default true)
+  - `bool InAppScoreUpdate` (default true)
+  - `bool InAppIngestionComplete` (default true)
+  - `bool InAppApplicationStatusChange` (default true)
+  - `bool EmailDailyDigest` (default false)
+  - `bool EmailWeeklySummary` (default false)
+  - `bool EmailInstantStrongMatch` (default false) — fires when `Score >= 9`
+  - `TimeOnly? QuietHoursStart`, `TimeOnly? QuietHoursEnd` (UTC; email skipped within window)
+  - `string TimeZoneId` (IANA, default "UTC")
+- [ ] Generate migration `AddNotificationPreferences`
+- [ ] `GET /api/settings/notifications` — returns prefs (auto-creates default row on first read)
+- [ ] `PUT /api/settings/notifications` — upsert
+- [ ] `Settings.razor` page at `/settings`:
+  - Toggle switches per in-app type
+  - Toggle switches per email type
+  - Quiet hours start/end pickers + timezone dropdown
+  - Save button calls `PUT /api/settings/notifications`
+- [ ] `NotificationService.CreateAsync` checks prefs before persisting
+- [ ] Sidebar "Settings" link with `ti-settings` icon
+
+**Acceptance criteria:** Toggling "In-app: New Strong Fit" off causes no notification rows to be created on subsequent high scores. Settings persist across logout/login.
+
+---
+
+### 6.6 Email Service Integration
+
+**Files to create:**
+- `src/JobScout.Core/Interfaces/IEmailSender.cs`
+- `src/JobScout.Infrastructure/Email/SendGridEmailSender.cs`
+- `src/JobScout.Infrastructure/Email/NullEmailSender.cs` — used when no API key is configured
+
+**Files to modify:**
+- `src/JobScout.Infrastructure/JobScout.Infrastructure.csproj` — add `SendGrid` package
+- `src/JobScout.Api/Program.cs`
+- `appsettings.json` / user secrets
+
+**Requirements:**
+- [ ] `IEmailSender.SendAsync(EmailMessage message, CancellationToken ct)` with `EmailMessage { ToAddress, ToName, Subject, HtmlBody, PlainTextBody }`
+- [ ] Add `SendGrid` NuGet (latest 9.x) to `JobScout.Infrastructure.csproj`
+- [ ] Store key under `SendGrid:ApiKey` and `SendGrid:FromAddress` / `SendGrid:FromName` in configuration (user secrets for dev)
+- [ ] `SendGridEmailSender` constructs `SendGridClient` once (registered as singleton)
+- [ ] If `SendGrid:ApiKey` is missing or empty, register `NullEmailSender` (logs the email at Information level and returns success)
+- [ ] On non-2xx response, log the SendGrid error body and throw — caller decides whether to retry
+- [ ] Honor quiet hours: `IEmailSender` should NOT itself check prefs — `NotificationService` is the gatekeeper
+
+**Acceptance criteria:** With a real API key configured, an instant alert email arrives in the recipient inbox. With the key missing, the service starts cleanly and `NullEmailSender` is used.
+
+---
+
+### 6.7 HTML Email Templates
+
+**Files to create:**
+- `src/JobScout.Infrastructure/Email/Templates/InstantAlertTemplate.cs`
+- `src/JobScout.Infrastructure/Email/Templates/DailyDigestTemplate.cs`
+- `src/JobScout.Infrastructure/Email/Templates/WeeklySummaryTemplate.cs`
+
+**Requirements:**
+- [ ] Templates are static C# methods that return `(string Subject, string HtmlBody, string PlainTextBody)` — no Razor runtime needed for now
+- [ ] Use inline CSS (no external stylesheets); honor the app's dark-mode palette but tested for white-background email clients (Gmail, Outlook)
+- [ ] **Instant alert:** subject "New strong match: {Job.Title} at {Job.Company}". Body shows job card with score, top matched keywords, "Apply" CTA linking to `Job.SourceUrl`, and a "View in JobScout" CTA linking to the app
+- [ ] **Daily digest:** subject "Your JobScout digest — {count} new matches". Lists up to 10 strong fits (score ≥ 8) from the last 24h, sorted by score desc
+- [ ] **Weekly summary:** subject "JobScout: {totalJobs} jobs, {strongFits} strong fits this week". Includes pipeline summary (applied/interviewing/offered counts) and the top 5 jobs of the week
+- [ ] Render a plain-text fallback for every template (accessibility + deliverability)
+- [ ] Image-free (no remote-loaded assets) — use Unicode glyphs or HTML entities for icons
+
+**Acceptance criteria:** Each template renders without errors against representative data and passes a manual Gmail + Outlook visual check.
+
+---
+
+### 6.8 Quiet Hours + Digest Scheduler
+
+**Files to create:**
+- `functions/JobScout.Functions/Functions/DailyDigestFunction.cs`
+- `functions/JobScout.Functions/Functions/WeeklySummaryFunction.cs`
+
+**Files to modify:**
+- `src/JobScout.Infrastructure/Services/NotificationService.cs` (quiet-hours check before emails)
+- `functions/JobScout.Functions/Program.cs` (DI for `IEmailSender`, `JobScoutDbContext`, templates)
+
+**Requirements:**
+- [ ] `DailyDigestFunction` — timer trigger `0 0 13 * * *` (13:00 UTC ≈ 9am US Eastern). For each user with `EmailDailyDigest = true`:
+  - Convert "now" to user's `TimeZoneId`
+  - Skip if currently within their quiet hours
+  - Gather strong fits (score ≥ 8) from the last 24h scoped to the user's profiles
+  - Skip if zero matches
+  - Render `DailyDigestTemplate` and send via `IEmailSender`
+- [ ] `WeeklySummaryFunction` — timer trigger `0 0 14 * * MON` (Monday 14:00 UTC). Same flow with weekly window and `EmailWeeklySummary`
+- [ ] Instant alerts (`Score >= 9` + `EmailInstantStrongMatch = true`) are dispatched inline from `NotificationService.OnHighScoreCreatedAsync` — skip if within quiet hours
+- [ ] Quiet hours helper: `bool IsWithinQuietHours(NotificationPreferences prefs, DateTimeOffset utcNow)` — handles wrap-around (e.g., 22:00–06:00)
+
+**Acceptance criteria:** Running the digest function locally with a seeded user dispatches one email per qualifying user. Setting quiet hours that cover "now" suppresses the email.
+
+---
+
+### 6.9 End-to-End Verification
 
 - [ ] Solution builds: 0 errors, 0 warnings across all projects
 - [ ] All migrations apply cleanly on a fresh database
-- [ ] `SerpApiIndeedClient` returns jobs when triggered via manual ingestion; jobs appear with `Source = Indeed`
-- [ ] `DiceClient` returns jobs; jobs appear with `Source = Dice`
-- [ ] `WellfoundClient` authenticates and returns jobs with `Source = Wellfound`
-- [ ] `SerpApiGoogleJobsClient` (or `GlassdoorClient`) returns jobs with `Source = Glassdoor`
-- [ ] Custom RSS source: add a sample RSS feed URL, trigger ingestion, jobs appear with `Source = Custom`
-- [ ] Custom JSON source: add a sample JSON endpoint with field mappings, jobs appear correctly mapped
-- [ ] Fuzzy deduplication: ingest two sources for the same job posting — second ingestion sets `IsPotentialDuplicate = true`
-- [ ] Exact deduplication still works — re-ingesting the same `(ExternalId, Source)` does not create a duplicate
-- [ ] `POST /api/jobs/{id}/confirm-duplicate` links records and populates `AlternateSourceUrls`
-- [ ] `POST /api/jobs/{id}/dismiss-duplicate` clears the flag
-- [ ] AI scoring works for jobs from all new sources
-- [ ] `JobSource` enum values for all new sources are serialized correctly in API responses
+- [ ] Authenticated `GET /api/notifications` returns only the current user's rows
+- [ ] Cross-tenant access (user A reads user B's notification by ID) returns 404
+- [ ] Manual ingestion with new jobs creates exactly one `IngestionComplete` notification per profile
+- [ ] Scoring a job with `Score >= 8` creates a `NewStrongFit` notification
+- [ ] Application status transition creates an `ApplicationStatusChange` notification
+- [ ] Bell icon badge reflects unread count within 60s of creation
+- [ ] Marking a notification read decrements the badge without a page refresh
+- [ ] `Settings.razor` toggle for an in-app type, when turned off, suppresses future rows of that type
+- [ ] Email send path works with a real `SendGrid:ApiKey`; with no key, `NullEmailSender` logs the would-be email
+- [ ] Quiet hours suppress the daily digest when "now" falls inside the window
+- [ ] Daily digest contains only jobs from the last 24h with `Score >= 8`
 
 ---
 
-### 4.9 Commit & PR
+### 6.10 Commit & PR
 
-- [ ] Stage all Phase 4 changes
+- [ ] Stage all Phase 6 changes
 - [ ] Commit with descriptive message
+- [ ] Push branch `phase6/notifications`
 - [ ] Create PR targeting `main`

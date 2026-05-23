@@ -18,6 +18,8 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<DailyMetric> DailyMetrics => Set<DailyMetric>();
     public DbSet<JobApplication> JobApplications => Set<JobApplication>();
     public DbSet<CustomJobSource> CustomJobSources => Set<CustomJobSource>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationPreferences> NotificationPreferences => Set<NotificationPreferences>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -128,6 +130,29 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
                       v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
                       v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
                   .Metadata.SetValueComparer(stringListComparer);
+        });
+
+        modelBuilder.Entity<Notification>(entity =>
+        {
+            entity.HasKey(n => n.Id);
+            entity.Property(n => n.Type).HasConversion<string>();
+            entity.Property(n => n.Title).HasMaxLength(200);
+            entity.Property(n => n.Message).HasMaxLength(1000);
+            entity.HasIndex(n => new { n.UserId, n.IsRead, n.CreatedAt });
+            entity.HasOne<ApplicationUser>()
+                  .WithMany()
+                  .HasForeignKey(n => n.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<NotificationPreferences>(entity =>
+        {
+            entity.HasKey(p => p.UserId);
+            entity.Property(p => p.TimeZoneId).HasMaxLength(64).HasDefaultValue("UTC");
+            entity.HasOne<ApplicationUser>()
+                  .WithOne()
+                  .HasForeignKey<NotificationPreferences>(p => p.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<JobApplication>(entity =>
