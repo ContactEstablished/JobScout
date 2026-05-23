@@ -1,0 +1,18 @@
+Jane Doe
+Senior Software Engineer
+
+EXPERIENCE
+Acme Corp — Senior Software Engineer (2020-Present)
+- Built and shipped distributed services in C# and Python.
+- Led migration of legacy systems to AWS using Lambda, S3, and DynamoDB.
+- Mentored a team of four junior engineers.
+
+Beta Inc — Software Engineer (2017-2020)
+- Built a React-based dashboard backed by a Node.js GraphQL API.
+- Worked with PostgreSQL and Redis at scale.
+
+SKILLS
+Languages: C#, Python, JavaScript, TypeScript, SQL
+Frameworks: React, ASP.NET Core, Node.js
+Cloud: AWS, Azure, Docker, Kubernetes
+Tools: Git, Linux, Postman, Jira

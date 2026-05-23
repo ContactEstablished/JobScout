@@ -1,8 +1,8 @@
-# Phase 6: Notifications & Alerts
+# Phase 7: Testing Strategy
 
-**Priority: MEDIUM** | **Branch:** `phase6/notifications`
+**Priority: HIGH** | **Branch:** `phase7/testing`
 
-> Reference: [Roadmap.md](Roadmap.md) — Phase 6 (sections 6.1 through 6.3)
+> Reference: [Roadmap.md](Roadmap.md) — Phase 7 (sections 7.1 through 7.3)
 
 ---
 
@@ -10,291 +10,251 @@
 
 | # | Task | Status |
 |---|------|--------|
-| 6.1 | `Notification` entity + EF migration | DONE |
-| 6.2 | `NotificationService` + event hooks (ingestion, scoring, applications) | DONE |
-| 6.3 | `NotificationsController` REST endpoints | DONE |
-| 6.4 | Bell icon dropdown + unread-count badge in `TopBar.razor` | DONE |
-| 6.5 | `NotificationPreferences` entity + `Settings.razor` page | DONE |
-| 6.6 | `IEmailSender` + SendGrid implementation | DONE |
-| 6.7 | HTML email templates (digest, instant alert) | DONE |
-| 6.8 | Quiet hours + digest scheduler (Azure Function) | DONE |
-| 6.9 | End-to-end verification | DONE |
-| 6.10 | Commit & PR | DONE |
+| 7.1 | Test project scaffolding (4 projects, solution wiring, shared packages) | DONE |
+| 7.2 | Test data builders + `tests/fixtures/` directory | DONE |
+| 7.3 | `JobScout.Core.Tests` — domain/model unit tests | DONE |
+| 7.4 | `JobScout.Infrastructure.Tests` — AI scoring service tests | DONE |
+| 7.5 | `JobScout.Infrastructure.Tests` — Job ingestion pipeline tests | DONE |
+| 7.6 | `JobScout.Infrastructure.Tests` — Resume parser tests | DONE |
+| 7.7 | `JobScout.Infrastructure.Tests` — Profile repository tests (user-scoping, cascades) | DONE |
+| 7.8 | `JobScout.Api.Tests` — Auth flow + protected-endpoint integration tests | DONE |
+| 7.9 | `JobScout.Web.Tests` — Blazor component tests (bUnit) + final `dotnet test` verification | DONE |
+| 7.10 | Commit & PR | DONE |
 
 ---
 
 ## Existing Infrastructure
 
-The following already exist and should be leveraged:
+The following already exist and inform how tests should be written:
 
-- **`ApplicationUser`** — `src/JobScout.Infrastructure/Identity/ApplicationUser.cs`
-  - Identity user is already the per-user anchor; notifications and preferences hang off `UserId` (string).
+- **Solution layout** — `JobScout.slnx` (new SLNX format). Test projects must be added under a new `<Folder Name="/tests/">` entry.
 - **`JobScoutDbContext`** — `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs`
-  - Inherits from `IdentityDbContext<ApplicationUser>`. Add new `DbSet<Notification>` and `DbSet<NotificationPreferences>` here.
-- **`JobIngestionService`** — `src/JobScout.Infrastructure/Services/JobIngestionService.cs`
-  - Fires after every ingestion run — hook `NotificationService.OnIngestionCompleteAsync` here.
+  - Inherits from `IdentityDbContext<ApplicationUser>`; tests need to seed Identity tables or skip them where not exercised.
+  - Currently configured for SQLite. Tests should use `Microsoft.EntityFrameworkCore.Sqlite` with `:memory:` (kept open via a single connection) to preserve column-type semantics — `InMemory` provider would skip the JSON converters that production code relies on.
 - **`ClaudeAiScoringService`** — `src/JobScout.Infrastructure/AI/ClaudeAiScoringService.cs`
-  - After scoring, emit a `NewStrongFit` notification when `Score >= 8` (and `>= 9` triggers an instant email if configured).
-- **`ApplicationTrackingService`** — `src/JobScout.Infrastructure/Services/ApplicationTrackingService.cs`
-  - On status transition, emit an `ApplicationStatusChange` notification.
-- **`TopBar.razor`** — `src/JobScout.Web/Components/TopBar.razor`
-  - Already renders a placeholder bell icon (`<i class="ti ti-bell">`). Replace its click handler with the new dropdown.
-- **`ICurrentUserService`** — `src/JobScout.Api/Services/CurrentUserService.cs`
-  - Resolves the authenticated `UserId` for scoping notifications and preferences.
+  - Post-Phase-5, this now constructs `new AnthropicClient(...)` internally. To make it testable we will inject an `IAnthropicClientFactory` (or pass the client in) — this is the only production-code refactor in Phase 7. The "no API key configured" branch already returns `DefaultScore` and can be tested today without touching the production API.
+- **`IJobBoardClient` implementations** — `src/JobScout.Infrastructure/ExternalServices/`
+  - All use `HttpClient` via DI, so each can be tested with a stub `HttpMessageHandler` returning canned JSON / RSS payloads.
 - **`Program.cs`** — `src/JobScout.Api/Program.cs`
-  - Services registered as `AddScoped<IInterface, Implementation>()`. Email sender registered as `AddSingleton<IEmailSender, SendGridEmailSender>()`.
-- **Azure Functions** — `functions/JobScout.Functions/`
-  - Already runs scheduled ingestion every 4 hours via timer trigger. Add the digest-email function alongside it.
+  - Uses top-level statements. `WebApplicationFactory<TEntryPoint>` requires a public `Program` class — add `public partial class Program {}` at the bottom of the file to expose it for tests.
+- **`ResumeParser`** — `src/JobScout.Infrastructure/Parsing/ResumeParser.cs`
+  - Dispatches by extension; tests for `.txt`, `.docx`, and `.pdf` need fixture files of each type.
+- **`ICurrentUserService`** — `src/JobScout.Infrastructure/Identity/CurrentUserService.cs`
+  - Throws when there is no authenticated user. Integration tests must either log in via `AuthController` first or replace this service with a stub registered via `WebApplicationFactory.WithWebHostBuilder(b => b.ConfigureServices(...))`.
 
 ---
 
 ## Task Details
 
-### 6.1 Notification Entity & Migration
+### 7.1 Test Project Scaffolding
 
 **Files to create:**
-- `src/JobScout.Core/Models/Notification.cs`
-- `src/JobScout.Core/Enums/NotificationType.cs`
-- `src/JobScout.Core/DTOs/NotificationDto.cs`
-- EF Core migration: `AddNotifications`
+- `tests/JobScout.Core.Tests/JobScout.Core.Tests.csproj`
+- `tests/JobScout.Core.Tests/Usings.cs`
+- `tests/JobScout.Infrastructure.Tests/JobScout.Infrastructure.Tests.csproj`
+- `tests/JobScout.Infrastructure.Tests/Usings.cs`
+- `tests/JobScout.Api.Tests/JobScout.Api.Tests.csproj`
+- `tests/JobScout.Api.Tests/Usings.cs`
+- `tests/JobScout.Web.Tests/JobScout.Web.Tests.csproj`
+- `tests/JobScout.Web.Tests/Usings.cs`
 
 **Files to modify:**
-- `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs`
-- `src/JobScout.Api/Mapping/MappingExtensions.cs`
+- `JobScout.slnx` — add a `<Folder Name="/tests/">` containing all four test projects
+- `src/JobScout.Api/Program.cs` — append `public partial class Program {}` to make the entry point accessible to `WebApplicationFactory`
 
 **Requirements:**
-- [ ] Create `NotificationType` enum: `NewStrongFit`, `ScoreUpdate`, `IngestionComplete`, `ApplicationStatusChange`
-- [ ] Create `Notification` entity:
-  - `Guid Id`
-  - `string UserId` — FK to `ApplicationUser.Id` (cascade delete)
-  - `Guid? ProfileId` — optional FK to `SearchProfile`
-  - `NotificationType Type`
-  - `string Title` (max 200)
-  - `string Message` (max 1000)
-  - `bool IsRead` (default false)
-  - `DateTime CreatedAt`
-  - `DateTime? ReadAt`
-  - `Guid? RelatedJobId` — nullable, no FK (jobs may be deleted)
-  - `Guid? RelatedApplicationId`
-- [ ] Register `DbSet<Notification>` in `JobScoutDbContext`
-- [ ] Configure indexes: `(UserId, IsRead, CreatedAt DESC)` for the unread query
-- [ ] Configure `Type` as string conversion (matches the existing enum pattern)
-- [ ] Generate migration `AddNotifications`
-- [ ] Add `NotificationDto` + `ToDto()` extension in `MappingExtensions`
+- [ ] All four projects target `net10.0` and have `<IsPackable>false</IsPackable>`
+- [ ] Common test packages on every test project: `Microsoft.NET.Test.Sdk`, `xunit.v3`, `xunit.runner.visualstudio`, `FluentAssertions`, `NSubstitute`
+- [ ] `JobScout.Core.Tests` references `JobScout.Core`
+- [ ] `JobScout.Infrastructure.Tests` references `JobScout.Core`, `JobScout.Infrastructure`, and adds `Microsoft.EntityFrameworkCore.Sqlite` (for in-memory)
+- [ ] `JobScout.Api.Tests` references `JobScout.Api`, `JobScout.Infrastructure`, `JobScout.Core`, and `Microsoft.AspNetCore.Mvc.Testing`
+- [ ] `JobScout.Web.Tests` references `JobScout.Web`, `JobScout.Core`, and adds `bunit` (latest 1.x)
+- [ ] `dotnet test` from the solution root discovers all four projects with zero tests defined yet — confirms wiring is correct
+- [ ] `dotnet build` still reports 0 warnings, 0 errors
 
-**Acceptance criteria:** Migration applies cleanly. Inserting a notification row and querying by `UserId` returns it.
+**Acceptance criteria:** Each test project compiles. `dotnet test` exits 0. Solution loads cleanly in IDEs.
 
 ---
 
-### 6.2 NotificationService + Event Hooks
+### 7.2 Test Data Builders & Fixture Directory
 
 **Files to create:**
-- `src/JobScout.Core/Interfaces/INotificationService.cs`
-- `src/JobScout.Infrastructure/Services/NotificationService.cs`
+- `tests/fixtures/resumes/sample.txt`
+- `tests/fixtures/resumes/sample.docx`
+- `tests/fixtures/resumes/sample.pdf`
+- `tests/fixtures/job-board-responses/remoteok.json`
+- `tests/fixtures/job-board-responses/adzuna.json`
+- `tests/fixtures/job-board-responses/themuse.json`
+- `tests/fixtures/job-board-responses/serpapi-linkedin.json`
+- `tests/fixtures/anthropic/strong-match-tool-use.json` — canned `MessageResponse` JSON with a `ToolUseContent` block
+- `tests/JobScout.Infrastructure.Tests/Builders/JobBuilder.cs`
+- `tests/JobScout.Infrastructure.Tests/Builders/ProfileBuilder.cs`
+- `tests/JobScout.Infrastructure.Tests/Builders/AiScoreBuilder.cs`
+- `tests/JobScout.Infrastructure.Tests/Builders/UserRatingBuilder.cs`
+- `tests/JobScout.Infrastructure.Tests/Builders/JobApplicationBuilder.cs`
+- `tests/JobScout.Infrastructure.Tests/Fixtures/SqliteFixture.cs` — opens a single `SqliteConnection` to `:memory:` and creates a `JobScoutDbContext` against it, calling `EnsureCreated` so all migrations apply. Implements `IDisposable`.
+- `tests/JobScout.Infrastructure.Tests/Fixtures/TestDbContextFactory.cs` — produces a fresh `JobScoutDbContext` per test using the fixture connection
+
+**Requirements:**
+- [ ] Fixture files are committed binary content for `.docx` / `.pdf`; `.txt` and `.json` are plain text
+- [ ] `JobScout.Infrastructure.Tests.csproj` copies `tests/fixtures/**/*` next to the test DLL with `CopyToOutputDirectory=PreserveNewest`
+- [ ] Builders expose a fluent surface: `new JobBuilder().WithTitle("...").WithSource(JobSource.RemoteOK).Build()` returning a `Job` with sensible defaults for every field
+- [ ] All builders default `Id = Guid.NewGuid()` and timestamps to `DateTime.UtcNow`
+- [ ] `SqliteFixture` is reusable as both an `IClassFixture<>` and a per-test `using` — pick the per-test style as the default for isolation
+
+**Acceptance criteria:** Two tests using the same `SqliteFixture` do not see each other's data. Builders compile and produce entities the DbContext can `Add` + `SaveChangesAsync` without error.
+
+---
+
+### 7.3 Core Unit Tests (`JobScout.Core.Tests`)
+
+**Files to create:**
+- `tests/JobScout.Core.Tests/EnumSerializationTests.cs`
+- `tests/JobScout.Core.Tests/Models/JobTests.cs`
+- `tests/JobScout.Core.Tests/DTOs/MappingShapeTests.cs` — verify DTO property counts haven't drifted from the model
+- `tests/JobScout.Core.Tests/Notifications/NotificationTypeTests.cs`
+
+**Requirements:**
+- [ ] Each test class follows `Subject_When_Should` naming
+- [ ] Pure unit tests — no DB, no HTTP. Pure C# only.
+- [ ] Cover `ApplicationStatus`, `JobSource`, `NotificationType`, `FeedFormat`, `LocationType`, `JobType` enums for `ToString()` ↔ parse round-trips
+
+**Acceptance criteria:** At least 15 tests in this project, all passing. Tests run in under 1s.
+
+---
+
+### 7.4 AI Scoring Service Tests
+
+**Files to create:**
+- `src/JobScout.Infrastructure/AI/IAnthropicClientFactory.cs` — wraps `new AnthropicClient(...)` so tests can substitute
+- `src/JobScout.Infrastructure/AI/AnthropicClientFactory.cs` — production implementation
+- `tests/JobScout.Infrastructure.Tests/AI/ClaudeAiScoringServiceTests.cs`
 
 **Files to modify:**
-- `src/JobScout.Infrastructure/Services/JobIngestionService.cs`
-- `src/JobScout.Infrastructure/AI/ClaudeAiScoringService.cs`
-- `src/JobScout.Infrastructure/Services/ApplicationTrackingService.cs`
-- `src/JobScout.Api/Program.cs`
+- `src/JobScout.Infrastructure/AI/ClaudeAiScoringService.cs` — inject `IAnthropicClientFactory` (constructor change); call `factory.Create(apiKey)` instead of `new AnthropicClient(...)`
+- `src/JobScout.Api/Program.cs` — register `AddSingleton<IAnthropicClientFactory, AnthropicClientFactory>()`
+- `functions/JobScout.Functions/Program.cs` — same registration
 
 **Requirements:**
-- [ ] `INotificationService` surface:
-  - `Task CreateAsync(string userId, NotificationType type, string title, string message, Guid? profileId = null, Guid? jobId = null, Guid? applicationId = null)`
-  - `Task<IReadOnlyList<Notification>> GetForUserAsync(string userId, bool unreadOnly = false, int take = 50)`
-  - `Task<int> GetUnreadCountAsync(string userId)`
-  - `Task MarkReadAsync(Guid notificationId, string userId)`
-  - `Task MarkAllReadAsync(string userId)`
-  - `Task OnIngestionCompleteAsync(SearchProfile profile, IngestionResult result)`
-  - `Task OnHighScoreCreatedAsync(AiScore score, Job job)` — fires when `Score >= 8`
-  - `Task OnApplicationStatusChangedAsync(JobApplication app, ApplicationStatus oldStatus, ApplicationStatus newStatus)`
-- [ ] Hook `OnIngestionCompleteAsync` into `JobIngestionService` after the final `SaveChangesAsync` — only fire when `result.NewJobs > 0`
-- [ ] Hook `OnHighScoreCreatedAsync` into `ClaudeAiScoringService.BatchScoreAsync` — call it for each score that crosses the threshold
-- [ ] Hook `OnApplicationStatusChangedAsync` into `ApplicationTrackingService.UpdateStatusAsync`
-- [ ] Respect `NotificationPreferences` (Task 6.5): if the user has disabled a notification type, persist nothing
-- [ ] Register `INotificationService` as `AddScoped` in `Program.cs`
+- [ ] **No API key path:** `ScoreJobAsync` returns a `DefaultScore` (`Score == 5m`, `ModelVersion == "default"`) when `Anthropic:ApiKey` is empty, no factory call is made
+- [ ] **Happy path:** factory returns a stubbed client whose `GetClaudeMessageAsync` resolves to a `MessageResponse` containing a `ToolUseContent` with valid scoring JSON → `AiScore` has overall score, all four sub-scores, matched keywords, growth areas, red flags, and populated token counts
+- [ ] **Missing tool_use:** response has only `TextContent` (no `ToolUseContent`) → falls back to `DefaultScore`
+- [ ] **Bad JSON in tool input:** input has wrong types or missing required fields → clamped to defaults without throwing
+- [ ] **Anthropic call throws:** `GetClaudeMessageAsync` throws → caught, `DefaultScore` returned, error logged
+- [ ] **Batch dedup:** `BatchScoreAsync` skips jobs already scored for that profile
+- [ ] **Strong-fit notification:** when a score crosses 8.0, `INotificationService.OnHighScoreCreatedAsync` is invoked exactly once with the matching job
+- [ ] **Few-shot prompt:** when 12 ratings exist for the profile, the system prompt embeds the **most recent 10** in descending order of `RatedAt`
+- [ ] **Per-profile model selection:** `profile.PreferredModel` takes precedence over `Anthropic:Model` config, which takes precedence over the Haiku default
+- [ ] Use `NSubstitute` for `IAnthropicClientFactory`, `INotificationService`, and `ILogger`; use `SqliteFixture` for the real DbContext
 
-**Acceptance criteria:** A scored job with `Score >= 8` produces exactly one new `Notification` row. An ingestion with zero new jobs produces no notification. Status transitions on `JobApplication` produce one row each.
+**Acceptance criteria:** All 9 scenarios above are individual `[Fact]` or `[Theory]` tests, all green.
 
 ---
 
-### 6.3 Notifications API Endpoints
+### 7.5 Job Ingestion Pipeline Tests
 
 **Files to create:**
-- `src/JobScout.Api/Controllers/NotificationsController.cs`
-
-**Files to modify:**
-- `src/JobScout.Api/Mapping/MappingExtensions.cs` (if not already covered by 6.1)
+- `tests/JobScout.Infrastructure.Tests/Services/JobIngestionServiceTests.cs`
+- `tests/JobScout.Infrastructure.Tests/Services/DeduplicationServiceTests.cs`
+- `tests/JobScout.Infrastructure.Tests/TestHelpers/StubJobBoardClient.cs` — implements `IJobBoardClient` with a configurable canned response and optional exception
 
 **Requirements:**
-- [ ] `GET /api/notifications?unreadOnly=true&take=50` — returns `IReadOnlyList<NotificationDto>` for the current user
-- [ ] `GET /api/notifications/unread-count` — returns `{ count: int }`
-- [ ] `PUT /api/notifications/{id}/read` — marks one notification read; 404 if not owned by current user
-- [ ] `PUT /api/notifications/read-all` — marks every unread notification for the current user read
-- [ ] `DELETE /api/notifications/{id}` — hard-delete, scoped to current user
-- [ ] All endpoints `[Authorize]` and scoped via `ICurrentUserService.UserId`
+- [ ] **Exact dedup:** ingesting the same `(ExternalId, Source)` twice does not double-insert; `Duplicates` counter increments
+- [ ] **Fuzzy dedup:** ingesting an Indeed job and a LinkedIn job with normalized-equal title/company sets `IsPotentialDuplicate = true` and `DuplicateOfJobId` to the first ingestion's `Id`; `FuzzyDuplicates` counter increments
+- [ ] **Source filtering:** when `profile.PreferredSources` contains only `JobSource.RemoteOK`, only the RemoteOK stub client is invoked
+- [ ] **Partial failure:** one of three stubs throws → ingestion completes with results from the other two, error logged, `NewJobsFound` reflects only the successful results
+- [ ] **Notification fired:** `INotificationService.OnIngestionCompleteAsync` is invoked iff `NewJobsFound > 0`
+- [ ] **DeduplicationService.NormalizeTitle:** `"Sr. Software Developer (Remote)"` and `"senior software developer"` normalize equal; `"Software Developer"` vs `"Data Scientist"` do not
+- [ ] **DeduplicationService.NormalizeCompany:** `"Acme Corp, Inc."` and `"ACME Corporation"` normalize equal
 
-**Acceptance criteria:** Authenticated user A cannot read or mutate user B's notifications (404 on every cross-tenant attempt).
+**Acceptance criteria:** All scenarios pass against `SqliteFixture`-backed DbContext. No real HTTP calls.
 
 ---
 
-### 6.4 Bell Icon Dropdown UI
+### 7.6 Resume Parser Tests
 
 **Files to create:**
-- `src/JobScout.Web/Components/NotificationDropdown.razor`
-- `src/JobScout.Web/Components/NotificationDropdown.razor.css`
-- `src/JobScout.Web/Services/NotificationApi.cs` (HTTP client wrapper)
-
-**Files to modify:**
-- `src/JobScout.Web/Components/TopBar.razor`
-- `src/JobScout.Web/Program.cs` (DI for `NotificationApi`)
+- `tests/JobScout.Infrastructure.Tests/Parsing/ResumeParserTests.cs`
 
 **Requirements:**
-- [ ] Replace the placeholder bell button in `TopBar.razor` (line 47) with a button that toggles `NotificationDropdown`
-- [ ] Render a numeric badge over the bell when `unreadCount > 0` (show "9+" when count >= 10)
-- [ ] Dropdown lists the most recent 10 notifications with: icon (per type), title, message preview, relative time ("3m ago"), and an unread dot for unread items
-- [ ] Clicking a notification: marks it read and navigates to the related job/application page (use `RelatedJobId` / `RelatedApplicationId` to build the route)
-- [ ] Dropdown header has a "Mark all read" button calling `PUT /api/notifications/read-all`
-- [ ] Footer "View all" link routes to a future `/notifications` page (out of scope for Phase 6; placeholder OK)
-- [ ] Poll `/api/notifications/unread-count` every 60s while the page is open
-- [ ] Match dark theme styling (use existing CSS variables)
+- [ ] **`.txt` round-trip:** parsing `sample.txt` returns `PlainText` matching the file contents and a non-empty `DetectedSkills`
+- [ ] **`.docx` extraction:** `sample.docx` contains the string "C#" → `PlainText` includes it
+- [ ] **`.pdf` extraction:** `sample.pdf` parses without throwing, `WordCount > 0`
+- [ ] **Skill detection:** at least 3 known skills from the resume appear in `DetectedSkills` (e.g. "Python", "React", "AWS")
+- [ ] **Empty stream:** an empty `MemoryStream` returns `PlainText = ""` and `DetectedSkills.Count == 0`
+- [ ] **Unsupported extension:** `.rtf` throws or returns empty — assert whichever the production code does
 
-**Acceptance criteria:** Creating a notification via the API causes the badge to update within 60s. Clicking a notification marks it read and the badge decrements without a page refresh.
+**Acceptance criteria:** Six scenarios pass. Tests complete in under 5 seconds even with PDF parsing.
 
 ---
 
-### 6.5 NotificationPreferences + Settings.razor
+### 7.7 Profile Repository Tests
 
 **Files to create:**
-- `src/JobScout.Core/Models/NotificationPreferences.cs`
-- `src/JobScout.Core/DTOs/NotificationPreferencesDto.cs`
-- `src/JobScout.Api/Controllers/SettingsController.cs`
-- `src/JobScout.Web/Pages/Settings.razor`
-- `src/JobScout.Web/Pages/Settings.razor.css`
-- EF Core migration: `AddNotificationPreferences`
-
-**Files to modify:**
-- `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs`
-- `src/JobScout.Web/Components/Sidebar.razor` (add "Settings" nav entry)
+- `tests/JobScout.Infrastructure.Tests/Repositories/ProfileRepositoryTests.cs`
+- `tests/JobScout.Infrastructure.Tests/Repositories/ApplicationRepositoryTests.cs`
 
 **Requirements:**
-- [ ] `NotificationPreferences` entity (one row per `ApplicationUser`):
-  - `string UserId` — PK, FK to `ApplicationUser`
-  - `bool InAppNewStrongFit` (default true)
-  - `bool InAppScoreUpdate` (default true)
-  - `bool InAppIngestionComplete` (default true)
-  - `bool InAppApplicationStatusChange` (default true)
-  - `bool EmailDailyDigest` (default false)
-  - `bool EmailWeeklySummary` (default false)
-  - `bool EmailInstantStrongMatch` (default false) — fires when `Score >= 9`
-  - `TimeOnly? QuietHoursStart`, `TimeOnly? QuietHoursEnd` (UTC; email skipped within window)
-  - `string TimeZoneId` (IANA, default "UTC")
-- [ ] Generate migration `AddNotificationPreferences`
-- [ ] `GET /api/settings/notifications` — returns prefs (auto-creates default row on first read)
-- [ ] `PUT /api/settings/notifications` — upsert
-- [ ] `Settings.razor` page at `/settings`:
-  - Toggle switches per in-app type
-  - Toggle switches per email type
-  - Quiet hours start/end pickers + timezone dropdown
-  - Save button calls `PUT /api/settings/notifications`
-- [ ] `NotificationService.CreateAsync` checks prefs before persisting
-- [ ] Sidebar "Settings" link with `ti-settings` icon
+- [ ] **CRUD:** `AddAsync` → `GetByIdAsync` round-trips all Phase 5 fields (`PreferredModel`, `DesiredSalaryMin/Max`)
+- [ ] **User scoping on GetAll:** seed 2 profiles under user A and 1 under user B → `GetAllAsync(userA.Id)` returns exactly 2
+- [ ] **User scoping on GetById:** user A's `GetByIdAsync(profileBId, userA.Id)` returns null
+- [ ] **Cascade delete:** deleting an `ApplicationUser` removes all their `SearchProfile`s and dependent `AiScore`s, `UserRating`s, `JobApplication`s, `CustomJobSource`s
+- [ ] **`SearchKeywords` JSON column:** save a profile with a 5-element list, read it back, list count is 5 and values match
+- [ ] **Application status pipeline:** seed 3 applied + 2 interviewing → `GetPipelineAsync` returns `Applied = 3, Interviewing = 2`
+- [ ] Use `SqliteFixture` so JSON converters fire
 
-**Acceptance criteria:** Toggling "In-app: New Strong Fit" off causes no notification rows to be created on subsequent high scores. Settings persist across logout/login.
+**Acceptance criteria:** Each test runs against a fresh DB. No cross-test contamination.
 
 ---
 
-### 6.6 Email Service Integration
+### 7.8 API Auth & Controller Integration Tests
 
 **Files to create:**
-- `src/JobScout.Core/Interfaces/IEmailSender.cs`
-- `src/JobScout.Infrastructure/Email/SendGridEmailSender.cs`
-- `src/JobScout.Infrastructure/Email/NullEmailSender.cs` — used when no API key is configured
-
-**Files to modify:**
-- `src/JobScout.Infrastructure/JobScout.Infrastructure.csproj` — add `SendGrid` package
-- `src/JobScout.Api/Program.cs`
-- `appsettings.json` / user secrets
+- `tests/JobScout.Api.Tests/Fixtures/JobScoutWebApplicationFactory.cs` — extends `WebApplicationFactory<Program>`, swaps `DbContext` to in-memory SQLite, exposes a helper for obtaining a JWT token
+- `tests/JobScout.Api.Tests/Auth/AuthControllerTests.cs`
+- `tests/JobScout.Api.Tests/Controllers/NotificationsControllerTests.cs`
+- `tests/JobScout.Api.Tests/Controllers/ProfilesControllerTests.cs`
+- `tests/JobScout.Api.Tests/Controllers/JobsControllerTests.cs`
 
 **Requirements:**
-- [ ] `IEmailSender.SendAsync(EmailMessage message, CancellationToken ct)` with `EmailMessage { ToAddress, ToName, Subject, HtmlBody, PlainTextBody }`
-- [ ] Add `SendGrid` NuGet (latest 9.x) to `JobScout.Infrastructure.csproj`
-- [ ] Store key under `SendGrid:ApiKey` and `SendGrid:FromAddress` / `SendGrid:FromName` in configuration (user secrets for dev)
-- [ ] `SendGridEmailSender` constructs `SendGridClient` once (registered as singleton)
-- [ ] If `SendGrid:ApiKey` is missing or empty, register `NullEmailSender` (logs the email at Information level and returns success)
-- [ ] On non-2xx response, log the SendGrid error body and throw — caller decides whether to retry
-- [ ] Honor quiet hours: `IEmailSender` should NOT itself check prefs — `NotificationService` is the gatekeeper
+- [ ] **Factory:** registers a fresh in-memory SQLite database per `WebApplicationFactory` instance; seeds one default `ApplicationUser` and exposes `GetTokenAsync(email, password)` for tests
+- [ ] **Registration:** `POST /api/auth/register` with valid payload → 200 with token; weak password → 400 with validation errors
+- [ ] **Login:** valid credentials → 200 with `accessToken`; wrong password → 401
+- [ ] **Token validation:** any protected endpoint returns 401 when no `Authorization` header is sent
+- [ ] **Expired token:** mint a token with `ValidTo = DateTime.UtcNow.AddMinutes(-5)` and confirm 401
+- [ ] **Cross-tenant isolation:** user A creates a profile, user B's `GET /api/profiles/{id}` returns 404
+- [ ] **Notifications cross-tenant:** user A triggers a notification, user B's `GET /api/notifications` returns an empty list and `PUT /api/notifications/{id}/read` for that id returns 404
+- [ ] **Jobs list:** `GET /api/jobs?profileId=` returns jobs for that profile only
 
-**Acceptance criteria:** With a real API key configured, an instant alert email arrives in the recipient inbox. With the key missing, the service starts cleanly and `NullEmailSender` is used.
+**Acceptance criteria:** ≥10 tests, all green. Factory cleans up SQLite connection on dispose.
 
 ---
 
-### 6.7 HTML Email Templates
+### 7.9 Blazor Component Tests + Verification
 
 **Files to create:**
-- `src/JobScout.Infrastructure/Email/Templates/InstantAlertTemplate.cs`
-- `src/JobScout.Infrastructure/Email/Templates/DailyDigestTemplate.cs`
-- `src/JobScout.Infrastructure/Email/Templates/WeeklySummaryTemplate.cs`
+- `tests/JobScout.Web.Tests/Components/NotificationDropdownTests.cs`
+- `tests/JobScout.Web.Tests/Components/ToggleRowTests.cs`
+- `tests/JobScout.Web.Tests/Components/JobCardTests.cs`
+- `tests/JobScout.Web.Tests/TestHelpers/BUnitContextExtensions.cs` — registers the WASM-style services (auth, navigation, fake `HttpClient`) needed by components
 
 **Requirements:**
-- [ ] Templates are static C# methods that return `(string Subject, string HtmlBody, string PlainTextBody)` — no Razor runtime needed for now
-- [ ] Use inline CSS (no external stylesheets); honor the app's dark-mode palette but tested for white-background email clients (Gmail, Outlook)
-- [ ] **Instant alert:** subject "New strong match: {Job.Title} at {Job.Company}". Body shows job card with score, top matched keywords, "Apply" CTA linking to `Job.SourceUrl`, and a "View in JobScout" CTA linking to the app
-- [ ] **Daily digest:** subject "Your JobScout digest — {count} new matches". Lists up to 10 strong fits (score ≥ 8) from the last 24h, sorted by score desc
-- [ ] **Weekly summary:** subject "JobScout: {totalJobs} jobs, {strongFits} strong fits this week". Includes pipeline summary (applied/interviewing/offered counts) and the top 5 jobs of the week
-- [ ] Render a plain-text fallback for every template (accessibility + deliverability)
-- [ ] Image-free (no remote-loaded assets) — use Unicode glyphs or HTML entities for icons
+- [ ] **NotificationDropdown:** with `unreadCount = 0`, no badge renders; with `unreadCount = 3`, a badge with text "3" appears; with `unreadCount = 12`, the badge reads "9+"
+- [ ] **NotificationDropdown:** clicking the bell opens the panel and triggers `NotificationsService.GetAsync` once
+- [ ] **NotificationDropdown:** clicking a notification calls `MarkReadAsync` and navigates to the related job
+- [ ] **ToggleRow:** changing the checkbox raises `CheckedChanged` with the new value
+- [ ] **JobCard:** renders score ring with the correct color band (green ≥ 8, amber 5–7, red < 5)
+- [ ] Mock `NotificationsService` and `JobsService` via NSubstitute injected through `Services.AddSingleton`
+- [ ] Final step: `dotnet test` from solution root → all four projects pass, total runtime under 30 seconds
+- [ ] Final step: `dotnet build` reports 0 warnings, 0 errors
 
-**Acceptance criteria:** Each template renders without errors against representative data and passes a manual Gmail + Outlook visual check.
-
----
-
-### 6.8 Quiet Hours + Digest Scheduler
-
-**Files to create:**
-- `functions/JobScout.Functions/Functions/DailyDigestFunction.cs`
-- `functions/JobScout.Functions/Functions/WeeklySummaryFunction.cs`
-
-**Files to modify:**
-- `src/JobScout.Infrastructure/Services/NotificationService.cs` (quiet-hours check before emails)
-- `functions/JobScout.Functions/Program.cs` (DI for `IEmailSender`, `JobScoutDbContext`, templates)
-
-**Requirements:**
-- [ ] `DailyDigestFunction` — timer trigger `0 0 13 * * *` (13:00 UTC ≈ 9am US Eastern). For each user with `EmailDailyDigest = true`:
-  - Convert "now" to user's `TimeZoneId`
-  - Skip if currently within their quiet hours
-  - Gather strong fits (score ≥ 8) from the last 24h scoped to the user's profiles
-  - Skip if zero matches
-  - Render `DailyDigestTemplate` and send via `IEmailSender`
-- [ ] `WeeklySummaryFunction` — timer trigger `0 0 14 * * MON` (Monday 14:00 UTC). Same flow with weekly window and `EmailWeeklySummary`
-- [ ] Instant alerts (`Score >= 9` + `EmailInstantStrongMatch = true`) are dispatched inline from `NotificationService.OnHighScoreCreatedAsync` — skip if within quiet hours
-- [ ] Quiet hours helper: `bool IsWithinQuietHours(NotificationPreferences prefs, DateTimeOffset utcNow)` — handles wrap-around (e.g., 22:00–06:00)
-
-**Acceptance criteria:** Running the digest function locally with a seeded user dispatches one email per qualifying user. Setting quiet hours that cover "now" suppresses the email.
+**Acceptance criteria:** ≥5 component tests pass. Full solution build + full test suite both green.
 
 ---
 
-### 6.9 End-to-End Verification
+### 7.10 Commit & PR
 
-- [ ] Solution builds: 0 errors, 0 warnings across all projects
-- [ ] All migrations apply cleanly on a fresh database
-- [ ] Authenticated `GET /api/notifications` returns only the current user's rows
-- [ ] Cross-tenant access (user A reads user B's notification by ID) returns 404
-- [ ] Manual ingestion with new jobs creates exactly one `IngestionComplete` notification per profile
-- [ ] Scoring a job with `Score >= 8` creates a `NewStrongFit` notification
-- [ ] Application status transition creates an `ApplicationStatusChange` notification
-- [ ] Bell icon badge reflects unread count within 60s of creation
-- [ ] Marking a notification read decrements the badge without a page refresh
-- [ ] `Settings.razor` toggle for an in-app type, when turned off, suppresses future rows of that type
-- [ ] Email send path works with a real `SendGrid:ApiKey`; with no key, `NullEmailSender` logs the would-be email
-- [ ] Quiet hours suppress the daily digest when "now" falls inside the window
-- [ ] Daily digest contains only jobs from the last 24h with `Score >= 8`
-
----
-
-### 6.10 Commit & PR
-
-- [ ] Stage all Phase 6 changes
-- [ ] Commit with descriptive message
-- [ ] Push branch `phase6/notifications`
-- [ ] Create PR targeting `main`
+- [ ] Stage all Phase 7 changes
+- [ ] Commit with descriptive message summarizing test counts per project
+- [ ] Push branch `phase7/testing`
+- [ ] Create PR targeting `main` with a test plan listing each scenario covered

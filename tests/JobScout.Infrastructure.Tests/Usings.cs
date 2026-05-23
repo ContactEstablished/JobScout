@@ -1,0 +1,9 @@
+global using Xunit;
+global using FluentAssertions;
+global using NSubstitute;
+global using JobScout.Core.Enums;
+global using JobScout.Core.Interfaces;
+global using JobScout.Core.Models;
+global using JobScout.Infrastructure.Data;
+global using Microsoft.EntityFrameworkCore;
+global using Microsoft.Extensions.Logging.Abstractions;

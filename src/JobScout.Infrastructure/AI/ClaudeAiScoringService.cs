@@ -1,7 +1,6 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using Anthropic.SDK;
 using Anthropic.SDK.Extensions;
 using Anthropic.SDK.Messaging;
 using JobScout.Core.Interfaces;
@@ -18,6 +17,7 @@ namespace JobScout.Infrastructure.AI;
 public class ClaudeAiScoringService(
     JobScoutDbContext db,
     IConfiguration config,
+    IAnthropicClientFactory clientFactory,
     INotificationService notifications,
     ILogger<ClaudeAiScoringService> logger) : IAiScoringService
 {
@@ -134,7 +134,7 @@ public class ClaudeAiScoringService(
         Job job, SearchProfile profile, string apiKey, IReadOnlyList<RatingExample> fewShot)
     {
         var model = ResolveModel(profile);
-        var client = new AnthropicClient(new APIAuthentication(apiKey));
+        var messenger = clientFactory.Create(apiKey);
 
         var systemPrompt = BuildSystemPrompt(profile, fewShot);
         var userPrompt = BuildUserPrompt(job, profile);
@@ -155,7 +155,7 @@ public class ClaudeAiScoringService(
 
         try
         {
-            var response = await client.Messages.GetClaudeMessageAsync(parameters);
+            var response = await messenger.SendAsync(parameters);
             var toolUse = response.Content.OfType<ToolUseContent>().FirstOrDefault();
 
             if (toolUse?.Input is null)

@@ -46,6 +46,7 @@ builder.Services.AddTransient<IJobBoardClient, SerpApiLinkedInClient>();
 // Ingestion + AI
 builder.Services.AddScoped<IJobIngestionService, JobIngestionService>();
 builder.Services.AddHttpClient<ClaudeAiScoringService>();
+builder.Services.AddSingleton<IAnthropicClientFactory, AnthropicClientFactory>();
 builder.Services.AddScoped<IAiScoringService, ClaudeAiScoringService>();
 builder.Services.AddScoped<INotificationService, NotificationService>();
 
