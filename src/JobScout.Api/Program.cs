@@ -133,6 +133,7 @@ builder.Services.AddTransient<IJobBoardClient, CustomSourceClient>();
 // Ingestion + AI
 builder.Services.AddScoped<IDeduplicationService, DeduplicationService>();
 builder.Services.AddScoped<IJobIngestionService, JobIngestionService>();
+builder.Services.AddSingleton<IAnthropicClientFactory, AnthropicClientFactory>();
 builder.Services.AddScoped<IAiScoringService, ClaudeAiScoringService>();
 
 var app = builder.Build();
@@ -156,3 +157,6 @@ app.UseAuthorization();
 app.MapControllers();
 
 app.Run();
+
+public partial class Program { }
+
