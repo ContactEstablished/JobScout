@@ -31,4 +31,8 @@ public class MetricsController : ControllerBase
         [FromQuery] Guid profileId,
         [FromQuery] int days = 30)
         => Ok(await _metrics.GetTrendsAsync(profileId, days));
+
+    [HttpGet("ai-costs")]
+    public async Task<ActionResult<AiCostSummaryDto>> GetAiCosts([FromQuery] Guid? profileId = null)
+        => Ok(await _metrics.GetAiCostSummaryAsync(profileId));
 }

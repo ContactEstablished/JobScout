@@ -11,4 +11,8 @@ public class DashboardStatsDto
     public int StrongFitsDelta { get; set; }
     public int SavedDelta { get; set; }
     public int AppliedDelta { get; set; }
+
+    // Phase 5: AI cost overview
+    public decimal AiCostUsdThisWeek { get; set; }
+    public decimal AiCostUsdAllTime { get; set; }
 }

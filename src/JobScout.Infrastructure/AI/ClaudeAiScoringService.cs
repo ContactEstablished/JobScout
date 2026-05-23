@@ -1,25 +1,30 @@
-using System.Net.Http.Json;
 using System.Text;
 using System.Text.Json;
-using System.Text.Json.Serialization;
+using System.Text.Json.Nodes;
+using Anthropic.SDK;
+using Anthropic.SDK.Extensions;
+using Anthropic.SDK.Messaging;
 using JobScout.Core.Interfaces;
 using JobScout.Core.Models;
 using JobScout.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using AnthropicTool = Anthropic.SDK.Common.Tool;
+using AnthropicFunction = Anthropic.SDK.Common.Function;
 
 namespace JobScout.Infrastructure.AI;
 
 public class ClaudeAiScoringService(
-    HttpClient http,
     JobScoutDbContext db,
     IConfiguration config,
     INotificationService notifications,
     ILogger<ClaudeAiScoringService> logger) : IAiScoringService
 {
-    private const string Model = "claude-haiku-4-5-20251001";
+    private const string DefaultModel = "claude-haiku-4-5-20251001";
     private const int MaxConcurrency = 3;
+    private const string ToolName = "submit_job_match_score";
+    private const int FewShotRatingCount = 10;
 
     public async Task<AiScore> ScoreJobAsync(Job job, SearchProfile profile)
     {
@@ -30,9 +35,8 @@ public class ClaudeAiScoringService(
             return DefaultScore(job, profile);
         }
 
-        var prompt = BuildPrompt(job, profile);
-        var raw    = await CallClaudeAsync(apiKey, prompt);
-        return ParseResponse(raw, job, profile);
+        var fewShotExamples = await GetFewShotExamplesAsync(profile.Id);
+        return await ScoreInternalAsync(job, profile, apiKey, fewShotExamples);
     }
 
     public async Task<IReadOnlyList<AiScore>> BatchScoreAsync(
@@ -43,19 +47,22 @@ public class ClaudeAiScoringService(
         var scores = new List<AiScore>();
         var sem = new SemaphoreSlim(MaxConcurrency);
 
+        var fewShotExamples = string.IsNullOrEmpty(apiKey)
+            ? []
+            : await GetFewShotExamplesAsync(profile.Id);
+
         var tasks = jobList.Select(async job =>
         {
             await sem.WaitAsync();
             try
             {
-                // Skip if already scored for this profile
                 var alreadyScored = await db.AiScores
                     .AnyAsync(s => s.JobId == job.Id && s.ProfileId == profile.Id);
                 if (alreadyScored) return;
 
                 var score = string.IsNullOrEmpty(apiKey)
                     ? DefaultScore(job, profile)
-                    : await ScoreJobAsync(job, profile);
+                    : await ScoreInternalAsync(job, profile, apiKey, fewShotExamples);
 
                 lock (scores) scores.Add(score);
                 db.AiScores.Add(score);
@@ -107,13 +114,6 @@ public class ClaudeAiScoringService(
         var profile = await db.SearchProfiles.FindAsync(profileId);
         if (profile is null) return;
 
-        // Get rating examples for calibration
-        var ratedJobs = await db.UserRatings
-            .Where(r => r.ProfileId == profileId)
-            .Include(r => r.Job)
-            .ToListAsync();
-
-        // Fetch jobs not yet scored for this profile
         var unscoredJobs = await db.Jobs
             .Where(j => j.IsActive && !j.AiScores.Any(s => s.ProfileId == profileId))
             .ToListAsync();
@@ -130,90 +130,208 @@ public class ClaudeAiScoringService(
         await BatchScoreAsync(unscoredJobs, profile);
     }
 
-    private async Task<string> CallClaudeAsync(string apiKey, string prompt)
+    private async Task<AiScore> ScoreInternalAsync(
+        Job job, SearchProfile profile, string apiKey, IReadOnlyList<RatingExample> fewShot)
     {
-        var request = new
+        var model = ResolveModel(profile);
+        var client = new AnthropicClient(new APIAuthentication(apiKey));
+
+        var systemPrompt = BuildSystemPrompt(profile, fewShot);
+        var userPrompt = BuildUserPrompt(job, profile);
+
+        var tool = new AnthropicTool(
+            new AnthropicFunction(ToolName, ScoreToolDescription, ScoreToolSchema));
+
+        var parameters = new MessageParameters
         {
-            model = Model,
-            max_tokens = 512,
-            messages = new[] { new { role = "user", content = prompt } }
+            Model = model,
+            MaxTokens = 1024,
+            Temperature = 0.0m,
+            System = [new SystemMessage(systemPrompt)],
+            Messages = [new Message(RoleType.User, userPrompt)],
+            Tools = [tool],
+            ToolChoice = new ToolChoice { Type = ToolChoiceType.Tool, Name = ToolName }
         };
 
-        using var req = new HttpRequestMessage(HttpMethod.Post, "https://api.anthropic.com/v1/messages");
-        req.Headers.Add("x-api-key", apiKey);
-        req.Headers.Add("anthropic-version", "2023-06-01");
-        req.Content = new StringContent(
-            JsonSerializer.Serialize(request), Encoding.UTF8, "application/json");
-
-        var response = await http.SendAsync(req);
-        response.EnsureSuccessStatusCode();
-
-        var body    = await response.Content.ReadFromJsonAsync<AnthropicResponse>();
-        return body?.Content?.FirstOrDefault()?.Text ?? "";
-    }
-
-    private AiScore ParseResponse(string raw, Job job, SearchProfile profile)
-    {
-        // Extract JSON from the response (Claude may wrap it in prose)
-        var start = raw.IndexOf('{');
-        var end   = raw.LastIndexOf('}');
-
-        if (start >= 0 && end > start)
+        try
         {
-            try
-            {
-                var json    = raw[start..(end + 1)];
-                var parsed  = JsonSerializer.Deserialize<ScoreResult>(json, _jsonOptions);
+            var response = await client.Messages.GetClaudeMessageAsync(parameters);
+            var toolUse = response.Content.OfType<ToolUseContent>().FirstOrDefault();
 
-                if (parsed is not null)
+            if (toolUse?.Input is null)
+            {
+                logger.LogWarning("No tool_use returned for job {JobId} — using default", job.Id);
+                return DefaultScore(job, profile);
+            }
+
+            var input = toolUse.Input;
+            var score = BuildScoreFromToolInput(input, job, profile, model);
+
+            if (response.Usage is { } usage)
+            {
+                score.InputTokens = usage.InputTokens;
+                score.OutputTokens = usage.OutputTokens;
+                try
                 {
-                    return new AiScore
-                    {
-                        Id             = Guid.NewGuid(),
-                        JobId          = job.Id,
-                        ProfileId      = profile.Id,
-                        Score          = Math.Clamp(parsed.Score, 1m, 10m),
-                        Reasoning      = parsed.Reasoning ?? "",
-                        MatchedKeywords = JsonSerializer.Serialize(parsed.MatchedKeywords ?? []),
-                        ScoredAt       = DateTime.UtcNow,
-                        ModelVersion   = Model
-                    };
+                    score.EstimatedCostUsd = response.CalculateCost().TotalCostUsd;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogDebug(ex, "Cost calculation skipped for model {Model}", model);
                 }
             }
-            catch (JsonException ex)
-            {
-                logger.LogWarning(ex, "Failed to parse score JSON for job {JobId} — using default", job.Id);
-            }
+
+            return score;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Anthropic SDK call failed for job {JobId}", job.Id);
+            return DefaultScore(job, profile);
+        }
+    }
+
+    private static AiScore BuildScoreFromToolInput(
+        JsonNode input, Job job, SearchProfile profile, string model)
+    {
+        decimal Read(string key, decimal fallback)
+        {
+            var node = input[key];
+            if (node is null) return fallback;
+            try { return Math.Clamp(node.GetValue<decimal>(), 0m, 10m); }
+            catch { return fallback; }
         }
 
-        return DefaultScore(job, profile);
+        string[] ReadArray(string key)
+        {
+            var node = input[key];
+            if (node is JsonArray arr)
+                return [.. arr.Select(n => n?.GetValue<string>() ?? "").Where(s => !string.IsNullOrWhiteSpace(s))];
+            return [];
+        }
+
+        var overall = Read("score", 5m);
+        var skills = Read("skillsMatch", overall);
+        var experience = Read("experienceFit", overall);
+        var culture = Read("cultureFit", overall);
+        var compensation = Read("compensationFit", overall);
+        var reasoning = input["reasoning"]?.GetValue<string>() ?? "";
+
+        return new AiScore
+        {
+            Id = Guid.NewGuid(),
+            JobId = job.Id,
+            ProfileId = profile.Id,
+            Score = Math.Clamp(overall, 1m, 10m),
+            Reasoning = reasoning,
+            MatchedKeywords = JsonSerializer.Serialize(ReadArray("matchedKeywords")),
+            GrowthAreas = JsonSerializer.Serialize(ReadArray("growthAreas")),
+            RedFlags = JsonSerializer.Serialize(ReadArray("redFlags")),
+            SkillsMatchScore = skills,
+            ExperienceFitScore = experience,
+            CultureFitScore = culture,
+            CompensationFitScore = compensation,
+            ScoredAt = DateTime.UtcNow,
+            ModelVersion = model
+        };
     }
 
     private static AiScore DefaultScore(Job job, SearchProfile profile) => new()
     {
-        Id             = Guid.NewGuid(),
-        JobId          = job.Id,
-        ProfileId      = profile.Id,
-        Score          = 5.0m,
-        Reasoning      = "Score unavailable (API not configured or parse error).",
+        Id = Guid.NewGuid(),
+        JobId = job.Id,
+        ProfileId = profile.Id,
+        Score = 5.0m,
+        Reasoning = "Score unavailable (API not configured or error during scoring).",
         MatchedKeywords = "[]",
-        ScoredAt       = DateTime.UtcNow,
-        ModelVersion   = "default"
+        GrowthAreas = "[]",
+        RedFlags = "[]",
+        ScoredAt = DateTime.UtcNow,
+        ModelVersion = "default"
     };
 
-    private static string BuildPrompt(Job job, SearchProfile profile)
+    private string ResolveModel(SearchProfile profile)
+    {
+        if (!string.IsNullOrWhiteSpace(profile.PreferredModel))
+            return profile.PreferredModel;
+
+        var configured = config["Anthropic:Model"];
+        return string.IsNullOrWhiteSpace(configured) ? DefaultModel : configured;
+    }
+
+    private async Task<IReadOnlyList<RatingExample>> GetFewShotExamplesAsync(Guid profileId)
+    {
+        var ratings = await db.UserRatings
+            .Where(r => r.ProfileId == profileId)
+            .Include(r => r.Job)
+            .OrderByDescending(r => r.RatedAt)
+            .Take(FewShotRatingCount)
+            .ToListAsync();
+
+        return [.. ratings
+            .Where(r => r.Job is not null)
+            .Select(r => new RatingExample(
+                r.Job!.Title,
+                r.Job.Company,
+                r.Stars,
+                Truncate(r.Notes, 200)))];
+    }
+
+    private static string BuildSystemPrompt(SearchProfile profile, IReadOnlyList<RatingExample> fewShot)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("You are a senior technical recruiter evaluating how well a candidate fits a job posting.");
+        sb.AppendLine();
+        sb.AppendLine("Score each dimension on a scale of 0.0 to 10.0:");
+        sb.AppendLine("  - skillsMatch: overlap between candidate skills/experience and required skills.");
+        sb.AppendLine("  - experienceFit: alignment of years of experience and seniority.");
+        sb.AppendLine("  - cultureFit: industry, company size, mission alignment based on profile signals.");
+        sb.AppendLine("  - compensationFit: compares posted salary against the candidate's desired range when provided.");
+        sb.AppendLine("Overall `score` is a holistic 1.0–10.0 rating that takes all dimensions into account.");
+        sb.AppendLine();
+        sb.AppendLine("`matchedKeywords`: terms from the posting that align with the candidate's background.");
+        sb.AppendLine("`growthAreas`: skills required by the posting that are NOT clearly present in the resume — frame as opportunities, not negatives.");
+        sb.AppendLine("`redFlags`: serious mismatches, missing must-have requirements, or concerning patterns.");
+        sb.AppendLine();
+        sb.AppendLine("You MUST call the submit_job_match_score tool with your evaluation. Do not respond with prose.");
+
+        if (profile.DesiredSalaryMin.HasValue || profile.DesiredSalaryMax.HasValue)
+        {
+            sb.AppendLine();
+            sb.Append("Candidate desired salary range (USD): ");
+            sb.Append(profile.DesiredSalaryMin.HasValue ? $"${profile.DesiredSalaryMin:N0}" : "open");
+            sb.Append(" to ");
+            sb.AppendLine(profile.DesiredSalaryMax.HasValue ? $"${profile.DesiredSalaryMax:N0}" : "open");
+            sb.AppendLine("Penalize compensationFit when the posting is well below this range; reward when at or above.");
+        }
+
+        if (fewShot.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("CALIBRATION — the candidate previously rated these jobs (1=worst, 5=best). Use them to anchor your scoring style:");
+            foreach (var ex in fewShot)
+            {
+                sb.Append($"  - \"{ex.Title}\" @ {ex.Company} — rated {ex.Stars}/5");
+                if (!string.IsNullOrWhiteSpace(ex.Notes))
+                    sb.Append($" (notes: {ex.Notes})");
+                sb.AppendLine();
+            }
+            sb.AppendLine("Higher candidate ratings should correlate with higher overall scores from you.");
+        }
+
+        return sb.ToString();
+    }
+
+    private static string BuildUserPrompt(Job job, SearchProfile profile)
     {
         var resume = string.IsNullOrWhiteSpace(profile.ResumeText)
             ? $"Profile: {profile.Name}. {profile.Description}"
-            : profile.ResumeText[..Math.Min(profile.ResumeText.Length, 2000)];
+            : profile.ResumeText[..Math.Min(profile.ResumeText.Length, 4000)];
 
         var desc = string.IsNullOrWhiteSpace(job.Description)
             ? $"{job.Title} at {job.Company}"
-            : job.Description[..Math.Min(job.Description.Length, 2000)];
+            : job.Description[..Math.Min(job.Description.Length, 4000)];
 
         return $$"""
-            You are a senior technical recruiter. Evaluate how well this candidate fits this job.
-
             CANDIDATE RESUME:
             {{resume}}
 
@@ -222,33 +340,40 @@ public class ClaudeAiScoringService(
             Company: {{job.Company}}
             Location: {{job.Location}} ({{job.LocationType}})
             Type: {{job.JobType}}
+            Salary: {{(string.IsNullOrWhiteSpace(job.Salary) ? "not listed" : job.Salary)}}
             Description: {{desc}}
 
-            Return ONLY a JSON object (no markdown, no explanation outside the JSON):
-            {
-              "score": <number 1.0-10.0>,
-              "reasoning": "<2-3 sentence explanation of fit>",
-              "matchedKeywords": ["<keyword1>", "<keyword2>"],
-              "redFlags": ["<concern1>"]
-            }
+            Evaluate fit and call submit_job_match_score with all required fields.
             """;
     }
 
-    private static readonly JsonSerializerOptions _jsonOptions = new()
+    private static string Truncate(string? text, int maxLen)
     {
-        PropertyNameCaseInsensitive = true
-    };
+        if (string.IsNullOrEmpty(text)) return "";
+        return text.Length <= maxLen ? text : text[..maxLen] + "…";
+    }
 
-    private record ScoreResult(
-        [property: JsonPropertyName("score")]           decimal Score,
-        [property: JsonPropertyName("reasoning")]       string? Reasoning,
-        [property: JsonPropertyName("matchedKeywords")] string[]? MatchedKeywords,
-        [property: JsonPropertyName("redFlags")]        string[]? RedFlags);
+    private const string ScoreToolDescription =
+        "Submit a multi-dimensional match score for a candidate / job pairing. " +
+        "Use this tool for every evaluation — do not return free-form text.";
 
-    private record AnthropicResponse(
-        [property: JsonPropertyName("content")] AnthropicContentBlock[]? Content);
+    private const string ScoreToolSchema = """
+        {
+          "type": "object",
+          "properties": {
+            "score":           { "type": "number", "minimum": 1, "maximum": 10, "description": "Overall holistic 1-10 fit score." },
+            "skillsMatch":     { "type": "number", "minimum": 0, "maximum": 10, "description": "Skill overlap, 0-10." },
+            "experienceFit":   { "type": "number", "minimum": 0, "maximum": 10, "description": "Seniority/years alignment, 0-10." },
+            "cultureFit":      { "type": "number", "minimum": 0, "maximum": 10, "description": "Industry/company/values alignment, 0-10." },
+            "compensationFit": { "type": "number", "minimum": 0, "maximum": 10, "description": "Salary alignment vs. candidate range, 0-10. Use 5 if either is unknown." },
+            "reasoning":       { "type": "string", "description": "2-3 sentence rationale for the overall score." },
+            "matchedKeywords": { "type": "array", "items": { "type": "string" }, "description": "Resume-aligned terms from the posting." },
+            "growthAreas":     { "type": "array", "items": { "type": "string" }, "description": "Skills the posting requires that are missing from the resume." },
+            "redFlags":        { "type": "array", "items": { "type": "string" }, "description": "Serious mismatches or concerns." }
+          },
+          "required": ["score", "skillsMatch", "experienceFit", "cultureFit", "compensationFit", "reasoning"]
+        }
+        """;
 
-    private record AnthropicContentBlock(
-        [property: JsonPropertyName("type")] string? Type,
-        [property: JsonPropertyName("text")] string? Text);
+    private record RatingExample(string Title, string Company, int Stars, string Notes);
 }

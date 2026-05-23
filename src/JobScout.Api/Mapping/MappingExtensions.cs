@@ -80,7 +80,16 @@ public static class MappingExtensions
         Reasoning = score.Reasoning,
         MatchedKeywords = score.MatchedKeywords,
         ScoredAt = score.ScoredAt,
-        ModelVersion = score.ModelVersion
+        ModelVersion = score.ModelVersion,
+        SkillsMatchScore = score.SkillsMatchScore,
+        ExperienceFitScore = score.ExperienceFitScore,
+        CultureFitScore = score.CultureFitScore,
+        CompensationFitScore = score.CompensationFitScore,
+        GrowthAreas = score.GrowthAreas,
+        RedFlags = score.RedFlags,
+        InputTokens = score.InputTokens,
+        OutputTokens = score.OutputTokens,
+        EstimatedCostUsd = score.EstimatedCostUsd
     };
 
     public static UserRatingDto ToDto(this UserRating rating) => new()
@@ -109,7 +118,10 @@ public static class MappingExtensions
         PreferredLocationTypes = profile.PreferredLocationTypes,
         LocationPreference = profile.LocationPreference,
         DetectedSkills = profile.DetectedSkills,
-        ProfileColor = profile.ProfileColor
+        ProfileColor = profile.ProfileColor,
+        PreferredModel = profile.PreferredModel,
+        DesiredSalaryMin = profile.DesiredSalaryMin,
+        DesiredSalaryMax = profile.DesiredSalaryMax
     };
 
     public static CustomJobSourceDto ToDto(this CustomJobSource source) => new()

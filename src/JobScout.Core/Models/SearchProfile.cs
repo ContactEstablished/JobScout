@@ -25,6 +25,11 @@ public class SearchProfile
     public List<string> DetectedSkills { get; set; } = [];
     public string? ProfileColor { get; set; }
 
+    // Phase 5: AI scoring preferences
+    public string? PreferredModel { get; set; }
+    public decimal? DesiredSalaryMin { get; set; }
+    public decimal? DesiredSalaryMax { get; set; }
+
     public ICollection<Job> Jobs { get; set; } = [];
     public ICollection<AiScore> AiScores { get; set; } = [];
     public ICollection<UserRating> UserRatings { get; set; } = [];

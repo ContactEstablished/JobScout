@@ -3,6 +3,7 @@ using System;
 using JobScout.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace JobScout.Infrastructure.Migrations
 {
     [DbContext(typeof(JobScoutDbContext))]
-    partial class JobScoutDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260523115026_AddAiScoringEnhancements")]
+    partial class AddAiScoringEnhancements
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.8");
@@ -296,99 +299,6 @@ namespace JobScout.Infrastructure.Migrations
                         .IsUnique();
 
                     b.ToTable("JobApplications");
-                });
-
-            modelBuilder.Entity("JobScout.Core.Models.Notification", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("IsRead")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Message")
-                        .IsRequired()
-                        .HasMaxLength(1000)
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("ProfileId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<DateTime?>("ReadAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("RelatedApplicationId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<Guid?>("RelatedJobId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Title")
-                        .IsRequired()
-                        .HasMaxLength(200)
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("Type")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("UserId", "IsRead", "CreatedAt");
-
-                    b.ToTable("Notifications");
-                });
-
-            modelBuilder.Entity("JobScout.Core.Models.NotificationPreferences", b =>
-                {
-                    b.Property<string>("UserId")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("EmailDailyDigest")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("EmailInstantStrongMatch")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("EmailWeeklySummary")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("InAppApplicationStatusChange")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("InAppIngestionComplete")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("InAppNewStrongFit")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<bool>("InAppScoreUpdate")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<TimeOnly?>("QuietHoursEnd")
-                        .HasColumnType("TEXT");
-
-                    b.Property<TimeOnly?>("QuietHoursStart")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("TimeZoneId")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT")
-                        .HasDefaultValue("UTC");
-
-                    b.HasKey("UserId");
-
-                    b.ToTable("NotificationPreferences");
                 });
 
             modelBuilder.Entity("JobScout.Core.Models.SearchProfile", b =>
@@ -763,24 +673,6 @@ namespace JobScout.Infrastructure.Migrations
                     b.Navigation("Job");
 
                     b.Navigation("Profile");
-                });
-
-            modelBuilder.Entity("JobScout.Core.Models.Notification", b =>
-                {
-                    b.HasOne("JobScout.Infrastructure.Identity.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-                });
-
-            modelBuilder.Entity("JobScout.Core.Models.NotificationPreferences", b =>
-                {
-                    b.HasOne("JobScout.Infrastructure.Identity.ApplicationUser", null)
-                        .WithOne()
-                        .HasForeignKey("JobScout.Core.Models.NotificationPreferences", "UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
                 });
 
             modelBuilder.Entity("JobScout.Core.Models.SearchProfile", b =>

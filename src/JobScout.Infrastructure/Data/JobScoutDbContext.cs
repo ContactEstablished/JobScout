@@ -60,7 +60,14 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
         {
             entity.HasKey(a => a.Id);
             entity.Property(a => a.MatchedKeywords).HasColumnType("TEXT");
+            entity.Property(a => a.GrowthAreas).HasColumnType("TEXT");
+            entity.Property(a => a.RedFlags).HasColumnType("TEXT");
             entity.Property(a => a.Score).HasPrecision(4, 2);
+            entity.Property(a => a.SkillsMatchScore).HasPrecision(4, 2);
+            entity.Property(a => a.ExperienceFitScore).HasPrecision(4, 2);
+            entity.Property(a => a.CultureFitScore).HasPrecision(4, 2);
+            entity.Property(a => a.CompensationFitScore).HasPrecision(4, 2);
+            entity.Property(a => a.EstimatedCostUsd).HasPrecision(12, 6);
             entity.HasOne(a => a.Job).WithMany(j => j.AiScores).HasForeignKey(a => a.JobId);
             entity.HasOne(a => a.Profile).WithMany(p => p.AiScores).HasForeignKey(a => a.ProfileId);
         });

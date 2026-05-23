@@ -133,7 +133,6 @@ builder.Services.AddTransient<IJobBoardClient, CustomSourceClient>();
 // Ingestion + AI
 builder.Services.AddScoped<IDeduplicationService, DeduplicationService>();
 builder.Services.AddScoped<IJobIngestionService, JobIngestionService>();
-builder.Services.AddHttpClient<ClaudeAiScoringService>();
 builder.Services.AddScoped<IAiScoringService, ClaudeAiScoringService>();
 
 var app = builder.Build();
