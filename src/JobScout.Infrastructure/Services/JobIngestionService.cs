@@ -13,8 +13,13 @@ public class JobIngestionService(
     {
         var result = new IngestionResult();
 
-        // Fetch from all clients in parallel
-        var fetchTasks = clients
+        // Filter clients by preferred sources (empty = use all)
+        var activeClients = profile.PreferredSources.Count > 0
+            ? clients.Where(c => profile.PreferredSources.Contains(c.Source))
+            : clients;
+
+        // Fetch from active clients in parallel
+        var fetchTasks = activeClients
             .Select(async c =>
             {
                 try { return await c.FetchJobsAsync(profile); }

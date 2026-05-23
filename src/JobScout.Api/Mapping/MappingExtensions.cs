@@ -96,6 +96,13 @@ public static class MappingExtensions
         LinkedInUrl = profile.LinkedInUrl,
         CreatedAt = profile.CreatedAt,
         UpdatedAt = profile.UpdatedAt,
-        IsActive = profile.IsActive
+        IsActive = profile.IsActive,
+        SearchKeywords = profile.SearchKeywords,
+        PreferredSources = profile.PreferredSources,
+        PreferredJobTypes = profile.PreferredJobTypes,
+        PreferredLocationTypes = profile.PreferredLocationTypes,
+        LocationPreference = profile.LocationPreference,
+        DetectedSkills = profile.DetectedSkills,
+        ProfileColor = profile.ProfileColor
     };
 }

@@ -1,5 +1,6 @@
 @page "/profiles"
 
+@using JobScout.Core.Enums
 @inject ProfilesService ProfilesApi
 @inject ProfileStateService ProfileState
 @inject ToastService Toast
@@ -19,9 +20,10 @@
     <div class="profiles-grid">
         @foreach (var profile in ProfileState.Profiles)
         {
+            var color = profile.ProfileColor ?? "#0f4c75";
             <div class="profile-card @(profile.Id == ProfileState.ActiveProfile?.Id ? "active-profile" : "")">
                 <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
-                    <div style="width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,#1a2e3e,#0f4c75);display:grid;place-items:center;font-weight:800;font-size:1.1rem;border:1px solid rgba(255,255,255,0.12)">
+                    <div style="width:46px;height:46px;border-radius:14px;background:linear-gradient(135deg,@(color),@(color)88);display:grid;place-items:center;font-weight:800;font-size:1.1rem;border:1px solid rgba(255,255,255,0.12)">
                         @profile.Name[..1].ToUpper()
                     </div>
                     <div>
@@ -42,6 +44,27 @@
                     <p style="font-style:italic">No description set.</p>
                 }
 
+                @if (profile.SearchKeywords.Count > 0)
+                {
+                    <div class="tag-row" style="margin-bottom:12px">
+                        @foreach (var kw in profile.SearchKeywords.Take(5))
+                        {
+                            <span class="chip">@kw</span>
+                        }
+                        @if (profile.SearchKeywords.Count > 5)
+                        {
+                            <span class="chip muted">+@(profile.SearchKeywords.Count - 5)</span>
+                        }
+                    </div>
+                }
+
+                @if (profile.PreferredSources.Count > 0)
+                {
+                    <p style="font-size:0.78rem;color:var(--muted);margin-bottom:8px">
+                        <i class="ti ti-world"></i> @string.Join(", ", profile.PreferredSources)
+                    </p>
+                }
+
                 @if (!string.IsNullOrEmpty(profile.ResumeFileName))
                 {
                     <p style="font-size:0.82rem;color:var(--teal);margin-bottom:16px">
@@ -59,6 +82,9 @@
                     <button class="btn-sm" @onclick="() => StartEdit(profile)">
                         <i class="ti ti-edit"></i> Edit
                     </button>
+                    <button class="btn-sm" @onclick="() => CloneAsync(profile.Id)">
+                        <i class="ti ti-copy"></i> Clone
+                    </button>
                     <button class="btn-sm danger" @onclick="() => DeleteAsync(profile.Id)">
                         <i class="ti ti-trash"></i> Delete
                     </button>
@@ -67,61 +93,214 @@
         }
     </div>
 
-    @if (_showForm)
+    @if (_showWizard)
     {
-        <div class="form-card">
-            <h3>@(_editingId.HasValue ? "Edit Profile" : "New Profile")</h3>
-
-            <div class="field">
-                <label>Name</label>
-                <input type="text" @bind="_formName" placeholder="e.g. Senior Backend Engineer" />
-            </div>
-            <div class="field">
-                <label>Description</label>
-                <textarea @bind="_formDescription" placeholder="Describe this job search focus..."></textarea>
-            </div>
-            <div class="field">
-                <label>LinkedIn URL (optional)</label>
-                <input type="url" @bind="_formLinkedIn" placeholder="https://linkedin.com/in/..." />
-            </div>
-
-            <div class="field">
-                <label>Resume (optional — .txt, .pdf, .docx)</label>
-                <InputFile OnChange="OnFileSelected" accept=".txt,.pdf,.docx"
-                           style="display:none" id="resume-input" />
-                <div class="resume-zone" @onclick="ClickFileInput">
-                    @if (_selectedFile is not null)
+        <div class="form-card wizard-card">
+            <div class="wizard-header">
+                <h3>@(_editingId.HasValue ? "Edit Profile" : "New Profile")</h3>
+                <div class="wizard-steps">
+                    @for (int i = 1; i <= 4; i++)
                     {
-                        <i class="ti ti-file-check" style="color:var(--teal)"></i>
-                        <p>@_selectedFile.Name</p>
-                    }
-                    else
-                    {
-                        <i class="ti ti-upload"></i>
-                        <p>Click to upload resume</p>
+                        var step = i;
+                        <button class="wizard-step @(step == _wizardStep ? "active" : "") @(step < _wizardStep ? "done" : "")"
+                                @onclick="() => _wizardStep = step">
+                            @step
+                        </button>
                     }
                 </div>
             </div>
 
-            <div style="display:flex;gap:10px;margin-top:8px">
-                <button class="btn-sm" @onclick="() => _showForm = false">Cancel</button>
-                <button class="btn-sm" style="border-color:rgba(32,230,207,0.42);background:rgba(32,230,207,0.10);color:var(--teal)"
-                        @onclick="SaveProfileAsync" disabled="@_saving">
-                    @if (_saving)
-                    {
-                        <i class="ti ti-loader"></i>
-                    }
-                    else
-                    {
-                        <i class="ti ti-device-floppy"></i>
-                    }
-                    Save
-                </button>
+            <p class="wizard-step-label">@StepLabel()</p>
+
+            @* ── Step 1: Identity ── *@
+            @if (_wizardStep == 1)
+            {
+                <div class="field">
+                    <label>Profile Name</label>
+                    <input type="text" @bind="_formName" placeholder="e.g. Senior Backend Engineer" />
+                </div>
+                <div class="field">
+                    <label>Description</label>
+                    <textarea @bind="_formDescription" placeholder="Describe this job search focus..."></textarea>
+                </div>
+                <div class="field">
+                    <label>LinkedIn URL (optional)</label>
+                    <input type="url" @bind="_formLinkedIn" placeholder="https://linkedin.com/in/..." />
+                </div>
+                <div class="field">
+                    <label>Profile Color</label>
+                    <div class="color-picker">
+                        @foreach (var c in _colorOptions)
+                        {
+                            var col = c;
+                            <button class="color-dot @(_formColor == col ? "selected" : "")"
+                                    style="background:@col"
+                                    @onclick="() => _formColor = col"></button>
+                        }
+                    </div>
+                </div>
+            }
+
+            @* ── Step 2: Resume ── *@
+            @if (_wizardStep == 2)
+            {
+                <div class="field">
+                    <label>Resume or LinkedIn PDF Export (.txt, .pdf, .docx)</label>
+                    <span class="field-hint">Upload your resume or a LinkedIn profile PDF export. Skills will be auto-detected.</span>
+                    <InputFile OnChange="OnFileSelected" accept=".txt,.pdf,.docx"
+                               style="display:none" id="resume-input" />
+                    <div class="resume-zone" @onclick="ClickFileInput">
+                        @if (_selectedFile is not null)
+                        {
+                            <i class="ti ti-file-check" style="color:var(--teal)"></i>
+                            <p>@_selectedFile.Name</p>
+                        }
+                        else if (!string.IsNullOrEmpty(_existingResumeFile))
+                        {
+                            <i class="ti ti-file-check" style="color:var(--teal)"></i>
+                            <p>@_existingResumeFile (existing)</p>
+                        }
+                        else
+                        {
+                            <i class="ti ti-upload"></i>
+                            <p>Click to upload resume or LinkedIn PDF</p>
+                            <span class="field-hint" style="margin-top:8px">LinkedIn: Settings → Data Privacy → Get a copy of your data → Download PDF</span>
+                        }
+                    </div>
+                </div>
+
+                @if (_detectedSkills.Count > 0)
+                {
+                    <div class="field">
+                        <label>Detected Skills (edit below)</label>
+                        <div class="tag-row editable">
+                            @foreach (var skill in _detectedSkills)
+                            {
+                                var s = skill;
+                                <span class="chip removable">
+                                    @s
+                                    <button class="chip-remove" @onclick="() => _detectedSkills.Remove(s)">x</button>
+                                </span>
+                            }
+                        </div>
+                        <div style="display:flex;gap:8px;margin-top:8px">
+                            <input type="text" @bind="_newSkill" placeholder="Add skill..."
+                                   @onkeydown="OnSkillKeyDown" style="flex:1" />
+                            <button class="btn-sm" @onclick="AddSkill">
+                                <i class="ti ti-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                }
+            }
+
+            @* ── Step 3: Search Preferences ── *@
+            @if (_wizardStep == 3)
+            {
+                <div class="field">
+                    <label>Search Keywords (comma-separated)</label>
+                    <input type="text" @bind="_keywordsInput"
+                           placeholder="e.g. .NET, backend, C#, Azure, cloud architect" />
+                    <span class="field-hint">These drive the queries sent to job boards.</span>
+                </div>
+                <div class="field">
+                    <label>Location Preference</label>
+                    <input type="text" @bind="_formLocation" placeholder="e.g. United States, New York, Remote" />
+                </div>
+                <div class="field">
+                    <label>Job Types</label>
+                    <div class="checkbox-group">
+                        @foreach (var jt in _jobTypeOptions)
+                        {
+                            var type = jt;
+                            <label class="checkbox-label">
+                                <input type="checkbox" checked="@_selectedJobTypes.Contains(type)"
+                                       @onchange="e => ToggleSet(_selectedJobTypes, type, (bool)(e.Value ?? false))" />
+                                @type
+                            </label>
+                        }
+                    </div>
+                </div>
+                <div class="field">
+                    <label>Location Types</label>
+                    <div class="checkbox-group">
+                        @foreach (var lt in _locationTypeOptions)
+                        {
+                            var locType = lt;
+                            <label class="checkbox-label">
+                                <input type="checkbox" checked="@_selectedLocationTypes.Contains(locType)"
+                                       @onchange="e => ToggleSet(_selectedLocationTypes, locType, (bool)(e.Value ?? false))" />
+                                @locType
+                            </label>
+                        }
+                    </div>
+                </div>
+            }
+
+            @* ── Step 4: Job Boards ── *@
+            @if (_wizardStep == 4)
+            {
+                <div class="field">
+                    <label>Preferred Job Boards (empty = search all)</label>
+                    <div class="checkbox-group source-group">
+                        @foreach (var src in Enum.GetValues<JobSource>())
+                        {
+                            var source = src;
+                            var enabled = _implementedSources.Contains(source);
+                            <label class="checkbox-label @(!enabled ? "disabled" : "")">
+                                <input type="checkbox" disabled="@(!enabled)"
+                                       checked="@_selectedSources.Contains(source)"
+                                       @onchange="e => ToggleSource(source, (bool)(e.Value ?? false))" />
+                                @source
+                                @if (!enabled)
+                                {
+                                    <span class="chip muted" style="margin-left:6px;font-size:0.65rem">coming soon</span>
+                                }
+                            </label>
+                        }
+                    </div>
+                </div>
+            }
+
+            @* ── Wizard navigation ── *@
+            <div class="wizard-nav">
+                @if (_wizardStep > 1)
+                {
+                    <button class="btn-sm" @onclick="() => _wizardStep--">
+                        <i class="ti ti-arrow-left"></i> Back
+                    </button>
+                }
+                else
+                {
+                    <button class="btn-sm" @onclick="CancelWizard">Cancel</button>
+                }
+
+                @if (_wizardStep < 4)
+                {
+                    <button class="btn-sm teal" @onclick="() => _wizardStep++"
+                            disabled="@(_wizardStep == 1 && string.IsNullOrWhiteSpace(_formName))">
+                        Next <i class="ti ti-arrow-right"></i>
+                    </button>
+                }
+                else
+                {
+                    <button class="btn-sm teal" @onclick="SaveProfileAsync" disabled="@_saving">
+                        @if (_saving)
+                        {
+                            <i class="ti ti-loader"></i>
+                        }
+                        else
+                        {
+                            <i class="ti ti-device-floppy"></i>
+                        }
+                        Save Profile
+                    </button>
+                }
             </div>
         </div>
     }
 
-    @if (!_showForm)
+    @if (!_showWizard)
     {
         <button class="btn-sm" style="margin-top:20px" @onclick="StartCreate">
             <i class="ti ti-plus"></i> New Profile
@@ -130,25 +309,64 @@
 </div>
 
 @code {
-    private bool _showForm;
+    // ── wizard state ──
+    private bool _showWizard;
+    private int _wizardStep = 1;
     private bool _saving;
     private Guid? _editingId;
+
+    // Step 1: Identity
     private string _formName = "";
     private string? _formDescription;
     private string? _formLinkedIn;
+    private string _formColor = "#0f4c75";
+
+    // Step 2: Resume
     private Microsoft.AspNetCore.Components.Forms.IBrowserFile? _selectedFile;
+    private string? _existingResumeFile;
+    private List<string> _detectedSkills = [];
+    private string _newSkill = "";
+
+    // Step 3: Search
+    private string _keywordsInput = "";
+    private string? _formLocation;
+    private HashSet<string> _selectedJobTypes = [];
+    private HashSet<string> _selectedLocationTypes = [];
+
+    // Step 4: Sources
+    private HashSet<JobSource> _selectedSources = [];
+
+    // ── static option lists ──
+    private static readonly string[] _colorOptions =
+        ["#0f4c75", "#1b9c85", "#e74c3c", "#8e44ad", "#e67e22", "#2980b9", "#16a085", "#c0392b"];
+
+    private static readonly string[] _jobTypeOptions =
+        ["Full-Time", "Part-Time", "Contract", "Internship"];
+
+    private static readonly string[] _locationTypeOptions =
+        ["Remote", "Hybrid", "On-Site"];
+
+    private static readonly HashSet<JobSource> _implementedSources =
+        [JobSource.Adzuna, JobSource.LinkedIn, JobSource.TheMuse, JobSource.RemoteOK];
 
     protected override void OnInitialized()
         => ProfileState.OnChange += StateHasChanged;
 
+    private string StepLabel() => _wizardStep switch
+    {
+        1 => "Step 1 — Identity",
+        2 => "Step 2 — Resume & Skills",
+        3 => "Step 3 — Search Preferences",
+        4 => "Step 4 — Job Boards",
+        _ => ""
+    };
+
+    // ── Create / Edit / Cancel ──
+
     private void StartCreate()
     {
-        _editingId = null;
-        _formName = "";
-        _formDescription = null;
-        _formLinkedIn = null;
-        _selectedFile = null;
-        _showForm = true;
+        ResetForm();
+        _showWizard = true;
     }
 
     private void StartEdit(SearchProfileDto profile)
@@ -157,14 +375,56 @@
         _formName = profile.Name;
         _formDescription = profile.Description;
         _formLinkedIn = profile.LinkedInUrl;
+        _formColor = profile.ProfileColor ?? "#0f4c75";
+        _existingResumeFile = profile.ResumeFileName;
+        _detectedSkills = [.. profile.DetectedSkills];
+        _keywordsInput = string.Join(", ", profile.SearchKeywords);
+        _formLocation = profile.LocationPreference;
+        _selectedJobTypes = [.. profile.PreferredJobTypes];
+        _selectedLocationTypes = [.. profile.PreferredLocationTypes];
+        _selectedSources = [.. profile.PreferredSources];
         _selectedFile = null;
-        _showForm = true;
+        _wizardStep = 1;
+        _showWizard = true;
     }
+
+    private void CancelWizard()
+    {
+        _showWizard = false;
+        ResetForm();
+    }
+
+    private void ResetForm()
+    {
+        _editingId = null;
+        _wizardStep = 1;
+        _formName = "";
+        _formDescription = null;
+        _formLinkedIn = null;
+        _formColor = "#0f4c75";
+        _selectedFile = null;
+        _existingResumeFile = null;
+        _detectedSkills = [];
+        _newSkill = "";
+        _keywordsInput = "";
+        _formLocation = null;
+        _selectedJobTypes = [];
+        _selectedLocationTypes = [];
+        _selectedSources = [];
+    }
+
+    // ── Save ──
+
+    private List<string> ParseKeywords()
+        => _keywordsInput.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                         .Where(k => k.Length > 0).Distinct().ToList();
 
     private async Task SaveProfileAsync()
     {
         if (string.IsNullOrWhiteSpace(_formName)) return;
         _saving = true;
+
+        var keywords = ParseKeywords();
 
         if (_editingId.HasValue)
         {
@@ -173,12 +433,21 @@
                 Name = _formName,
                 Description = _formDescription,
                 LinkedInUrl = _formLinkedIn,
-                IsActive = ProfileState.ActiveProfile?.Id == _editingId
+                IsActive = ProfileState.ActiveProfile?.Id == _editingId,
+                SearchKeywords = keywords,
+                PreferredSources = [.. _selectedSources],
+                PreferredJobTypes = [.. _selectedJobTypes],
+                PreferredLocationTypes = [.. _selectedLocationTypes],
+                LocationPreference = _formLocation,
+                ProfileColor = _formColor
             };
             await ProfilesApi.UpdateAsync(_editingId.Value, req);
 
             if (_selectedFile is not null)
                 await ProfilesApi.UploadResumeAsync(_editingId.Value, _selectedFile);
+
+            if (_detectedSkills.Count > 0)
+                await ProfilesApi.UpdateSkillsAsync(_editingId.Value, new UpdateSkillsRequest { Skills = _detectedSkills });
 
             var updated = await ProfilesApi.GetByIdAsync(_editingId.Value);
             if (updated is not null) ProfileState.UpdateProfile(updated);
@@ -190,20 +459,44 @@
             {
                 Name = _formName,
                 Description = _formDescription,
-                LinkedInUrl = _formLinkedIn
+                LinkedInUrl = _formLinkedIn,
+                SearchKeywords = keywords,
+                PreferredSources = [.. _selectedSources],
+                PreferredJobTypes = [.. _selectedJobTypes],
+                PreferredLocationTypes = [.. _selectedLocationTypes],
+                LocationPreference = _formLocation,
+                ProfileColor = _formColor
             };
             var created = await ProfilesApi.CreateAsync(req);
             if (created is not null)
             {
-                ProfileState.AddProfile(created);
                 if (_selectedFile is not null)
                     await ProfilesApi.UploadResumeAsync(created.Id, _selectedFile);
+
+                if (_detectedSkills.Count > 0)
+                    await ProfilesApi.UpdateSkillsAsync(created.Id, new UpdateSkillsRequest { Skills = _detectedSkills });
+
+                var refreshed = await ProfilesApi.GetByIdAsync(created.Id);
+                ProfileState.AddProfile(refreshed ?? created);
                 Toast.Show("Profile created");
             }
         }
 
         _saving = false;
-        _showForm = false;
+        _showWizard = false;
+        ResetForm();
+    }
+
+    // ── Clone / Delete ──
+
+    private async Task CloneAsync(Guid id)
+    {
+        var cloned = await ProfilesApi.CloneAsync(id);
+        if (cloned is not null)
+        {
+            ProfileState.AddProfile(cloned);
+            Toast.Show("Profile cloned");
+        }
     }
 
     private async Task DeleteAsync(Guid id)
@@ -212,6 +505,36 @@
         ProfileState.RemoveProfile(id);
         Toast.Show("Profile deleted");
     }
+
+    // ── Skills helpers ──
+
+    private void AddSkill()
+    {
+        if (!string.IsNullOrWhiteSpace(_newSkill) && !_detectedSkills.Contains(_newSkill.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            _detectedSkills.Add(_newSkill.Trim());
+            _newSkill = "";
+        }
+    }
+
+    private void OnSkillKeyDown(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddSkill();
+    }
+
+    // ── Checkbox helpers ──
+
+    private static void ToggleSet(HashSet<string> set, string value, bool selected)
+    {
+        if (selected) set.Add(value); else set.Remove(value);
+    }
+
+    private void ToggleSource(JobSource source, bool selected)
+    {
+        if (selected) _selectedSources.Add(source); else _selectedSources.Remove(source);
+    }
+
+    // ── File helpers ──
 
     private void OnFileSelected(Microsoft.AspNetCore.Components.Forms.InputFileChangeEventArgs e)
         => _selectedFile = e.File;

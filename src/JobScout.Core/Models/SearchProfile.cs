@@ -1,3 +1,5 @@
+using JobScout.Core.Enums;
+
 namespace JobScout.Core.Models;
 
 public class SearchProfile
@@ -13,6 +15,15 @@ public class SearchProfile
     public bool IsActive { get; set; }
 
     public string UserId { get; set; } = string.Empty;
+
+    // Phase 2: Search preferences
+    public List<string> SearchKeywords { get; set; } = [];
+    public List<JobSource> PreferredSources { get; set; } = [];
+    public List<string> PreferredJobTypes { get; set; } = [];
+    public List<string> PreferredLocationTypes { get; set; } = [];
+    public string? LocationPreference { get; set; }
+    public List<string> DetectedSkills { get; set; } = [];
+    public string? ProfileColor { get; set; }
 
     public ICollection<Job> Jobs { get; set; } = [];
     public ICollection<AiScore> AiScores { get; set; } = [];

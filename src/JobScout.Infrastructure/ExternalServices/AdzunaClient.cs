@@ -14,6 +14,8 @@ public class AdzunaClient(
     IConfiguration config,
     ILogger<AdzunaClient> logger) : IJobBoardClient
 {
+    public JobSource Source => JobSource.Adzuna;
+
     private static readonly JsonSerializerOptions _json = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
@@ -87,6 +89,9 @@ public class AdzunaClient(
 
     private static string BuildQuery(SearchProfile profile)
     {
+        if (profile.SearchKeywords.Count > 0)
+            return string.Join(" ", profile.SearchKeywords)[..Math.Min(string.Join(" ", profile.SearchKeywords).Length, 80)];
+
         var text = $"{profile.Name} {profile.Description}".Trim();
         return string.IsNullOrWhiteSpace(text) ? "software engineer" : text[..Math.Min(text.Length, 80)];
     }
