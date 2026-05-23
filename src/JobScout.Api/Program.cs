@@ -1,10 +1,15 @@
+using System.Text;
 using JobScout.Core.Interfaces;
 using JobScout.Infrastructure.AI;
 using JobScout.Infrastructure.Data;
 using JobScout.Infrastructure.ExternalServices;
+using JobScout.Infrastructure.Identity;
 using JobScout.Infrastructure.Repositories;
 using JobScout.Infrastructure.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -22,6 +27,45 @@ builder.Services.AddOpenApi(options =>
 
 builder.Services.AddProblemDetails();
 
+// Identity
+builder.Services.AddIdentityCore<ApplicationUser>(options =>
+{
+    options.Password.RequireDigit = true;
+    options.Password.RequireLowercase = true;
+    options.Password.RequireUppercase = true;
+    options.Password.RequiredLength = 8;
+    options.Password.RequireNonAlphanumeric = false;
+    options.User.RequireUniqueEmail = true;
+})
+.AddEntityFrameworkStores<JobScoutDbContext>()
+.AddDefaultTokenProviders();
+
+// JWT Authentication
+var jwtKey = builder.Configuration["Jwt:Key"]
+    ?? throw new InvalidOperationException("Jwt:Key must be configured.");
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidateAudience = true,
+        ValidateLifetime = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey))
+    };
+});
+
+builder.Services.AddAuthorization();
+builder.Services.AddHttpContextAccessor();
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("BlazorClient", policy =>
@@ -32,12 +76,16 @@ builder.Services.AddCors(options =>
                 "http://localhost:5079",
                 builder.Configuration["AllowedOrigins"] ?? "https://localhost:7036")
             .AllowAnyMethod()
-            .AllowAnyHeader();
+            .AllowAnyHeader()
+            .AllowCredentials();
     });
 });
 
 builder.Services.AddDbContext<JobScoutDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("DefaultConnection")));
+
+// Auth services
+builder.Services.AddScoped<ICurrentUserService, CurrentUserService>();
 
 // Repositories
 builder.Services.AddScoped<IJobRepository, JobRepository>();
@@ -77,6 +125,7 @@ app.UseStatusCodePages();
 app.UseHttpsRedirection();
 app.UseCors("BlazorClient");
 
+app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 

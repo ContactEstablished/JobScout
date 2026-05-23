@@ -1,10 +1,12 @@
 using JobScout.Core.DTOs;
 using JobScout.Core.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace JobScout.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class MetricsController : ControllerBase
 {

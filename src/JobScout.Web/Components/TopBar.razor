@@ -1,5 +1,7 @@
 @inject ProfileStateService ProfileState
 @inject IJSRuntime JS
+@inject AuthenticationStateProvider AuthStateProvider
+@inject NavigationManager Nav
 @implements IDisposable
 
 <div class="topbar">
@@ -46,23 +48,101 @@
         <i class="ti ti-bell"></i>
     </button>
 
-    <div class="user-pill">
-        <div class="avatar">@GetInitials()</div>
-        <span class="user-name">@(ProfileState.ActiveProfile?.Name ?? "Guest")</span>
+    <div class="user-menu" @onclick="ToggleUserMenu" @onclick:stopPropagation="true">
+        <div class="user-pill" role="button" aria-haspopup="true" aria-expanded="@showUserMenu">
+            <div class="avatar">@GetInitials()</div>
+            <span class="user-name">@displayName</span>
+            <i class="ti ti-chevron-down" style="font-size:0.75rem;opacity:0.5;"></i>
+        </div>
+
+        @if (showUserMenu)
+        {
+            <div class="user-dropdown-backdrop" @onclick="CloseUserMenu" @onclick:stopPropagation="true"></div>
+            <div class="user-dropdown">
+                <div class="user-dropdown-header">
+                    <div class="avatar" style="width:40px;height:40px;font-size:0.95rem;">@GetInitials()</div>
+                    <div>
+                        <div class="user-dropdown-name">@displayName</div>
+                        <div class="user-dropdown-email">@userEmail</div>
+                    </div>
+                </div>
+                <div class="user-dropdown-divider"></div>
+                <button class="user-dropdown-item" @onclick="SignOut">
+                    <i class="ti ti-logout"></i>
+                    <span>Sign out</span>
+                </button>
+            </div>
+        }
     </div>
 </div>
 
 @code {
-    protected override void OnInitialized()
-        => ProfileState.OnChange += StateHasChanged;
+    private string displayName = "Guest";
+    private string userEmail = "";
+    private bool showUserMenu;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ProfileState.OnChange += StateHasChanged;
+        await LoadUserInfo();
+
+        if (AuthStateProvider is JwtAuthenticationStateProvider jwt)
+        {
+            jwt.AuthenticationStateChanged += OnAuthStateChanged;
+        }
+    }
+
+    private async void OnAuthStateChanged(Task<AuthenticationState> task)
+    {
+        await LoadUserInfo();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadUserInfo()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity?.IsAuthenticated == true)
+        {
+            displayName = user.FindFirst("display_name")?.Value
+                       ?? user.FindFirst("name")?.Value
+                       ?? "User";
+            userEmail = user.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value
+                     ?? user.FindFirst("email")?.Value
+                     ?? "";
+        }
+        else
+        {
+            displayName = "Guest";
+            userEmail = "";
+        }
+    }
 
     private string GetInitials()
     {
-        var name = ProfileState.ActiveProfile?.Name ?? "?";
-        var parts = name.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        var parts = displayName.Split(' ', StringSplitOptions.RemoveEmptyEntries);
         return parts.Length >= 2
             ? $"{parts[0][0]}{parts[^1][0]}"
-            : name.Length > 0 ? name[0].ToString().ToUpper() : "?";
+            : displayName.Length > 0 ? displayName[0].ToString().ToUpper() : "?";
+    }
+
+    private void ToggleUserMenu()
+        => showUserMenu = !showUserMenu;
+
+    private void CloseUserMenu()
+        => showUserMenu = false;
+
+    private async Task SignOut()
+    {
+        showUserMenu = false;
+
+        if (AuthStateProvider is JwtAuthenticationStateProvider jwt)
+        {
+            await jwt.MarkUserAsLoggedOut();
+        }
+
+        Nav.NavigateTo("/login", forceLoad: false);
     }
 
     private void OnProfileChanged(ChangeEventArgs e)
@@ -78,5 +158,12 @@
         => await JS.InvokeVoidAsync("eval", "document.body.classList.toggle('drawer-open')");
 
     public void Dispose()
-        => ProfileState.OnChange -= StateHasChanged;
+    {
+        ProfileState.OnChange -= StateHasChanged;
+
+        if (AuthStateProvider is JwtAuthenticationStateProvider jwt)
+        {
+            jwt.AuthenticationStateChanged -= OnAuthStateChanged;
+        }
+    }
 }

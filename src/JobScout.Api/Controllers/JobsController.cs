@@ -3,12 +3,14 @@ using JobScout.Core.DTOs;
 using JobScout.Core.Enums;
 using JobScout.Core.Interfaces;
 using JobScout.Infrastructure.Data;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
 namespace JobScout.Api.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/[controller]")]
 public class JobsController : ControllerBase
 {

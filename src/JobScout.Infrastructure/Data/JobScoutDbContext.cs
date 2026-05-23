@@ -1,9 +1,11 @@
 using JobScout.Core.Models;
+using JobScout.Infrastructure.Identity;
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 
 namespace JobScout.Infrastructure.Data;
 
-public class JobScoutDbContext : DbContext
+public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
 {
     public JobScoutDbContext(DbContextOptions<JobScoutDbContext> options) : base(options) { }
 
@@ -56,6 +58,11 @@ public class JobScoutDbContext : DbContext
         modelBuilder.Entity<SearchProfile>(entity =>
         {
             entity.HasKey(p => p.Id);
+            entity.HasIndex(p => p.UserId);
+            entity.HasOne<ApplicationUser>()
+                  .WithMany(u => u.Profiles)
+                  .HasForeignKey(p => p.UserId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<JobApplication>(entity =>
