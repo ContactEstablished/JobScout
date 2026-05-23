@@ -8,4 +8,5 @@ public interface IMetricsService
     Task<IReadOnlyList<SourceBreakdownDto>> GetSourceBreakdownAsync(Guid profileId);
     Task<IReadOnlyList<PostingWindowDto>> GetPostingWindowsAsync(Guid profileId);
     Task<IReadOnlyList<DashboardStatsDto>> GetTrendsAsync(Guid profileId, int days);
+    Task<AiCostSummaryDto> GetAiCostSummaryAsync(Guid? profileId);
 }
