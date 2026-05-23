@@ -1,8 +1,8 @@
-# Phase 1: Authentication & User Accounts
+# Phase 2: Profile Management Enhancements
 
-**Priority: CRITICAL** | **Branch:** `upgrade/dotnet10`
+**Priority: HIGH** | **Branch:** `phase2/profile-management`
 
-> Reference: [Roadmap.md](Roadmap.md) — Phase 1 (sections 1.1 through 1.5)
+> Reference: [Roadmap.md](Roadmap.md) — Phase 2 (sections 2.1 through 2.5)
 
 ---
 
@@ -10,111 +10,94 @@
 
 | # | Task | Status |
 |---|------|--------|
-| 1.1 | ASP.NET Core Identity setup | DONE |
-| 1.2 | JWT authentication for the API | DONE |
-| 1.3 | User-to-Profile relationship | DONE |
-| 1.4 | Blazor authentication state (provider, handler, pages) | DONE |
-| 1.5 | TopBar auth integration + sign out | DONE |
-| 1.6 | End-to-end verification | TODO |
-| 1.7 | Commit & PR | TODO |
+| 2.1 | SearchProfile schema expansion + migration | DONE |
+| 2.2 | Update DTOs and API contracts | DONE |
+| 2.3 | Job board clients use profile keywords | DONE |
+| 2.4 | Ingestion service respects PreferredSources | DONE |
+| 2.5 | Multi-step profile creation wizard | DONE |
+| 2.6 | Resume skill persistence + manual editing | DONE |
+| 2.7 | LinkedIn PDF import workflow | DONE |
+| 2.8 | Profile clone endpoint + UI | DONE |
+| 2.9 | End-to-end verification | DONE |
+| 2.10 | Commit & PR | DONE |
 
 ---
 
 ## Completed Tasks
 
-### 1.1 ASP.NET Core Identity Setup
+### 2.1 SearchProfile Schema Expansion + Migration
 
-- [x] `ApplicationUser` entity — `src/JobScout.Infrastructure/Identity/ApplicationUser.cs`
-  - Extends `IdentityUser` with `DisplayName`, `CreatedAt`, `ICollection<SearchProfile> Profiles`
-- [x] `JobScoutDbContext` inherits `IdentityDbContext<ApplicationUser>`
-  - FK config: `SearchProfile.UserId` -> `ApplicationUser.Id` (cascade delete, indexed)
-- [x] EF Core migration generated — `20260522192358_InitialCreate.cs`
-  - All Identity tables (AspNetUsers, AspNetRoles, claims, logins, tokens) + app tables
-- [x] Password policy: 8+ chars, uppercase, lowercase, digit required
-- [x] Package: `Microsoft.AspNetCore.Identity.EntityFrameworkCore` 10.0.8
+- [x] Added 7 new properties to `SearchProfile`: `SearchKeywords`, `PreferredSources`, `PreferredJobTypes`, `PreferredLocationTypes`, `LocationPreference`, `DetectedSkills`, `ProfileColor`
+- [x] JSON column serialization in `JobScoutDbContext` with `ValueComparer` for all list properties
+- [x] EF Core migration `AddProfileSearchPreferences` generated and applied cleanly
 
-### 1.2 JWT Authentication for the API
+### 2.2 Update DTOs and API Contracts
 
-- [x] `AuthController` — `src/JobScout.Api/Controllers/AuthController.cs`
-  - `POST /api/auth/register` — creates user, returns JWT + user info
-  - `POST /api/auth/login` — validates credentials, returns JWT + user info
-  - Claims: `NameIdentifier`, `EmailAddress`, `display_name` | 7-day expiry
-- [x] `[Authorize]` on all controllers: Profiles, Jobs, Ratings, Metrics
-- [x] JWT Bearer configured in `src/JobScout.Api/Program.cs`
-- [x] `ICurrentUserService` — `src/JobScout.Core/Interfaces/ICurrentUserService.cs`
-- [x] `CurrentUserService` — `src/JobScout.Infrastructure/Identity/CurrentUserService.cs`
-- [x] Auth DTOs — `src/JobScout.Core/DTOs/AuthDtos.cs`
-  - `RegisterRequest`, `LoginRequest`, `AuthResponse`, `UserDto`
-- [x] Dev JWT key in `appsettings.Development.json`
-- [x] Package: `Microsoft.AspNetCore.Authentication.JwtBearer` 10.0.8
+- [x] `SearchProfileDto` — added all 7 Phase 2 fields
+- [x] `CreateProfileRequest` — added keywords, sources, job types, location types, location, color
+- [x] `UpdateProfileRequest` — added same Phase 2 fields
+- [x] `UpdateSkillsRequest` — new DTO for skill editing
+- [x] `MappingExtensions.ToDto()` — maps all new fields
+- [x] `ProfilesController.Create` — maps new fields from request
+- [x] `ProfilesController.Update` — maps new fields from request
+- [x] `PUT /profiles/{id}/skills` — new endpoint for skill updates
+- [x] `POST /profiles/{id}/clone` — new endpoint for deep-copy
+- [x] `JsonStringEnumConverter` added to API JSON options
 
-### 1.3 User-to-Profile Relationship
+### 2.3 Job Board Clients Use Profile Keywords
 
-- [x] `UserId` (string, required) on `SearchProfile` model
-- [x] `IProfileRepository` — all methods accept `string userId`
-- [x] `ProfileRepository` — scopes all queries by userId
-- [x] `ProfilesController` injects `ICurrentUserService`, passes userId to all calls
-- [x] `DbSeeder` creates dev user `dev@jobscout.local` / `DevPass123!` with seeded profile
+- [x] Added `Source` property to `IJobBoardClient` interface
+- [x] `AdzunaClient` — uses `profile.SearchKeywords` when non-empty
+- [x] `SerpApiLinkedInClient` — uses `profile.SearchKeywords` + `profile.LocationPreference`
+- [x] `TheMuseClient` — uses `profile.SearchKeywords` as category list
+- [x] `RemoteOkClient` — uses `profile.SearchKeywords` for tag filtering
 
-### 1.4 Blazor Authentication State
+### 2.4 Ingestion Service Respects PreferredSources
 
-- [x] `JwtAuthenticationStateProvider` — `src/JobScout.Web/Auth/JwtAuthenticationStateProvider.cs`
-  - Reads JWT from localStorage, parses claims, checks expiration
-  - `MarkUserAsAuthenticated(token)` and `MarkUserAsLoggedOut()`
-- [x] `AuthTokenHandler` — `src/JobScout.Web/Auth/AuthTokenHandler.cs`
-  - DelegatingHandler attaching `Authorization: Bearer` header to all requests
-- [x] `Login.razor` + `Register.razor` with dark-mode styling
-  - Uses `MinimalLayout` (no sidebar/topbar on auth pages)
-- [x] `App.razor` — `CascadingAuthenticationState` + `AuthorizeRouteView`
-  - Unauthorized users redirected via `RedirectToLogin` component
-- [x] `Program.cs` — registers auth services, `AuthTokenHandler`, `AuthService` HTTP client
-- [x] Packages: `Microsoft.AspNetCore.Components.Authorization` 10.0.8, `System.IdentityModel.Tokens.Jwt` 8.18.0
+- [x] `JobIngestionService` filters `IJobBoardClient` instances by `profile.PreferredSources`
+- [x] Empty sources list = use all clients (backward compatible)
 
-### Verified Working
+### 2.5 Multi-Step Profile Creation Wizard
 
-- Registration: `POST /api/auth/register` returns JWT ✓
-- Login: `POST /api/auth/login` returns JWT ✓
-- Protected endpoints return 401 without token ✓
-- Protected endpoints return 200 with valid JWT ✓
-- User scoping: User A cannot see User B's profiles ✓
-- Dev user login works ✓
-- Solution builds: 0 errors, 0 warnings across all 5 projects ✓
+- [x] 4-step wizard: Identity → Resume & Skills → Search Preferences → Job Boards
+- [x] Step 1: Name, description, LinkedIn URL, profile color picker
+- [x] Step 2: Resume/LinkedIn PDF upload, detected skills with add/remove
+- [x] Step 3: Search keywords (comma-separated), location, job types, location types
+- [x] Step 4: Job board source selection with "coming soon" for unimplemented sources
+- [x] Wizard step navigation with numbered indicators
+- [x] Edit mode pre-populates all fields from existing profile
+- [x] CSS: wizard steps, color picker, chips, checkbox groups
 
----
+### 2.6 Resume Skill Persistence + Manual Editing
 
-### 1.5 TopBar Auth Integration + Sign Out
+- [x] `UploadResume` endpoint auto-persists `DetectedSkills` from `ResumeParser`
+- [x] Wizard Step 2 shows detected skills with remove buttons
+- [x] Manual skill add via text input + Enter key
+- [x] `PUT /profiles/{id}/skills` endpoint for standalone updates
 
-- [x] Injected `AuthenticationStateProvider` and `NavigationManager`
-- [x] `LoadUserInfo()` reads `display_name` and `email` claims from JWT auth state
-- [x] User pill shows authenticated user's `DisplayName` and derived initials
-- [x] Click-to-toggle dropdown with user avatar, name, email, and "Sign out" button
-- [x] Sign out calls `MarkUserAsLoggedOut()`, clears JWT, navigates to `/login`
-- [x] Click-outside-to-close via transparent backdrop
-- [x] Subscribes to `AuthenticationStateChanged` for live updates
-- [x] Proper `Dispose()` cleanup for both event subscriptions
-- [x] Dropdown CSS added to `app.css` — consistent with existing dark theme styling
+### 2.7 LinkedIn PDF Import Workflow
 
----
+- [x] Resume upload accepts PDF (already supported by `ResumeParser`)
+- [x] Wizard Step 2 updated with LinkedIn-specific UX guidance
+- [x] Instructions for LinkedIn data export path
 
-## Remaining Tasks
+### 2.8 Profile Clone Endpoint + UI
 
-### 1.6 End-to-End Verification
+- [x] `POST /profiles/{id}/clone` — deep copies name (with "(Copy)" suffix), description, resume, keywords, sources, job types, location types, location, skills, color
+- [x] Does NOT copy scores, ratings, or metrics
+- [x] Clone button added to profile cards in wizard UI
 
-Run both the API and the Blazor frontend together and verify the full flow:
+### 2.9 End-to-End Verification
 
-- [ ] Navigating to the app unauthenticated redirects to `/login`
-- [ ] Register a new account — redirects to home feed
-- [ ] Page refresh — remains authenticated (token persisted)
-- [ ] Sign out — redirects to `/login`
-- [ ] Sign back in with created credentials
-- [ ] Profile CRUD works for the logged-in user
-- [ ] Dev user can log in (`dev@jobscout.local` / `DevPass123!`)
-- [ ] Second user (new browser/incognito) cannot see first user's profiles
+- [x] Solution builds: 0 errors, 0 warnings across all 5 projects
+- [x] Migration applies cleanly
+- [x] Create profile with Phase 2 fields — all round-trip correctly
+- [x] Update profile — modified fields persist
+- [x] Update skills endpoint works
+- [x] Clone profile — deep copies all fields
+- [x] Get all profiles — correct count
+- [x] JSON enum serialization (string ↔ enum) works
 
----
+### 2.10 Commit & PR
 
-### 1.7 Commit & PR
-
-- [ ] Stage all Phase 1 changes
-- [ ] Commit with descriptive message
-- [ ] Create PR targeting `main`
+- [x] PR #9: https://github.com/ContactEstablished/JobScout/pull/9

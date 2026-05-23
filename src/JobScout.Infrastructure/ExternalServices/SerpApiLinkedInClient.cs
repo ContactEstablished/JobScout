@@ -13,6 +13,7 @@ public class SerpApiLinkedInClient(
     IConfiguration config,
     ILogger<SerpApiLinkedInClient> logger) : IJobBoardClient
 {
+    public JobSource Source => JobSource.LinkedIn;
     public async Task<IReadOnlyList<Job>> FetchJobsAsync(SearchProfile profile, CancellationToken ct = default)
     {
         var apiKey = config["SerpApi:ApiKey"];
@@ -30,10 +31,14 @@ public class SerpApiLinkedInClient(
         {
             try
             {
+                var location = !string.IsNullOrWhiteSpace(profile.LocationPreference)
+                    ? profile.LocationPreference
+                    : "United States";
+
                 var url = "https://serpapi.com/search.json" +
                           $"?engine=linkedin_jobs" +
                           $"&q={Uri.EscapeDataString(query)}" +
-                          $"&location=United+States" +
+                          $"&location={Uri.EscapeDataString(location)}" +
                           $"&start={page * 10}" +
                           $"&api_key={apiKey}";
 
@@ -81,6 +86,9 @@ public class SerpApiLinkedInClient(
 
     private static string BuildQuery(SearchProfile profile)
     {
+        if (profile.SearchKeywords.Count > 0)
+            return string.Join(" ", profile.SearchKeywords)[..Math.Min(string.Join(" ", profile.SearchKeywords).Length, 100)];
+
         var text = $"{profile.Name} {profile.Description}".Trim();
         return string.IsNullOrWhiteSpace(text) ? "software engineer" : text[..Math.Min(text.Length, 100)];
     }

@@ -60,7 +60,13 @@ public class ProfilesController : ControllerBase
             UserId = _currentUser.UserId,
             CreatedAt = now,
             UpdatedAt = now,
-            IsActive = false
+            IsActive = false,
+            SearchKeywords = request.SearchKeywords,
+            PreferredSources = request.PreferredSources,
+            PreferredJobTypes = request.PreferredJobTypes,
+            PreferredLocationTypes = request.PreferredLocationTypes,
+            LocationPreference = request.LocationPreference,
+            ProfileColor = request.ProfileColor
         };
 
         await _profiles.AddAsync(profile);
@@ -78,6 +84,12 @@ public class ProfilesController : ControllerBase
         profile.Description = request.Description;
         profile.LinkedInUrl = request.LinkedInUrl;
         profile.IsActive = request.IsActive;
+        profile.SearchKeywords = request.SearchKeywords;
+        profile.PreferredSources = request.PreferredSources;
+        profile.PreferredJobTypes = request.PreferredJobTypes;
+        profile.PreferredLocationTypes = request.PreferredLocationTypes;
+        profile.LocationPreference = request.LocationPreference;
+        profile.ProfileColor = request.ProfileColor;
         profile.UpdatedAt = DateTime.UtcNow;
 
         await _profiles.UpdateAsync(profile);
@@ -113,6 +125,7 @@ public class ProfilesController : ControllerBase
 
         profile.ResumeFileName = file.FileName;
         profile.ResumeText = parsed.PlainText;
+        profile.DetectedSkills = [.. parsed.DetectedSkills];
         profile.UpdatedAt = DateTime.UtcNow;
 
         await _profiles.UpdateAsync(profile);
@@ -139,5 +152,52 @@ public class ProfilesController : ControllerBase
 
         var result = await _ingestion.IngestAsync(profile);
         return Ok(result);
+    }
+
+    [HttpPut("{id:guid}/skills")]
+    public async Task<IActionResult> UpdateSkills(Guid id, [FromBody] UpdateSkillsRequest request)
+    {
+        var profile = await _profiles.GetByIdAsync(id, _currentUser.UserId);
+        if (profile is null)
+            return NotFound();
+
+        profile.DetectedSkills = request.Skills;
+        profile.UpdatedAt = DateTime.UtcNow;
+
+        await _profiles.UpdateAsync(profile);
+        return Ok(new { skills = profile.DetectedSkills });
+    }
+
+    [HttpPost("{id:guid}/clone")]
+    public async Task<ActionResult<SearchProfileDto>> Clone(Guid id)
+    {
+        var source = await _profiles.GetByIdAsync(id, _currentUser.UserId);
+        if (source is null)
+            return NotFound();
+
+        var now = DateTime.UtcNow;
+        var clone = new SearchProfile
+        {
+            Id = Guid.NewGuid(),
+            Name = $"{source.Name} (Copy)",
+            Description = source.Description,
+            LinkedInUrl = source.LinkedInUrl,
+            ResumeText = source.ResumeText,
+            ResumeFileName = source.ResumeFileName,
+            UserId = _currentUser.UserId,
+            CreatedAt = now,
+            UpdatedAt = now,
+            IsActive = false,
+            SearchKeywords = [.. source.SearchKeywords],
+            PreferredSources = [.. source.PreferredSources],
+            PreferredJobTypes = [.. source.PreferredJobTypes],
+            PreferredLocationTypes = [.. source.PreferredLocationTypes],
+            LocationPreference = source.LocationPreference,
+            DetectedSkills = [.. source.DetectedSkills],
+            ProfileColor = source.ProfileColor
+        };
+
+        await _profiles.AddAsync(clone);
+        return CreatedAtAction(nameof(GetById), new { id = clone.Id }, clone.ToDto());
     }
 }

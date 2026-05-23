@@ -49,4 +49,18 @@ public class ProfilesService(HttpClient http)
         var response = await http.PostAsJsonAsync($"api/profiles/{id}/recalibrate", request);
         return response.IsSuccessStatusCode;
     }
+
+    public async Task<SearchProfileDto?> CloneAsync(Guid id)
+    {
+        var response = await http.PostAsync($"api/profiles/{id}/clone", null);
+        return response.IsSuccessStatusCode
+            ? await response.Content.ReadFromJsonAsync<SearchProfileDto>()
+            : null;
+    }
+
+    public async Task<bool> UpdateSkillsAsync(Guid id, UpdateSkillsRequest request)
+    {
+        var response = await http.PutAsJsonAsync($"api/profiles/{id}/skills", request);
+        return response.IsSuccessStatusCode;
+    }
 }

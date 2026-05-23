@@ -9,10 +9,16 @@ namespace JobScout.Infrastructure.ExternalServices;
 
 public class TheMuseClient(HttpClient http, ILogger<TheMuseClient> logger) : IJobBoardClient
 {
+    public JobSource Source => JobSource.TheMuse;
+
+    private static readonly string[] DefaultCategories = ["Software Engineer", "Developer", "Data Science"];
+
     public async Task<IReadOnlyList<Job>> FetchJobsAsync(SearchProfile profile, CancellationToken ct = default)
     {
         var jobs = new List<Job>();
-        var categories = new[] { "Software Engineer", "Developer", "Data Science" };
+        var categories = profile.SearchKeywords.Count > 0
+            ? profile.SearchKeywords.ToArray()
+            : DefaultCategories;
 
         foreach (var category in categories)
         {

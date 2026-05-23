@@ -1,7 +1,9 @@
+using JobScout.Core.Enums;
 using JobScout.Core.Models;
 using JobScout.Infrastructure.Identity;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 
 namespace JobScout.Infrastructure.Data;
 
@@ -63,6 +65,47 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
                   .WithMany(u => u.Profiles)
                   .HasForeignKey(p => p.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
+
+            // Phase 2: JSON-serialized list columns with value comparers
+            var stringListComparer = new ValueComparer<List<string>>(
+                (a, b) => a != null && b != null && a.SequenceEqual(b),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList());
+
+            var sourceListComparer = new ValueComparer<List<JobSource>>(
+                (a, b) => a != null && b != null && a.SequenceEqual(b),
+                c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+                c => c.ToList());
+
+            entity.Property(p => p.SearchKeywords).HasColumnType("TEXT")
+                  .HasConversion(
+                      v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                      v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
+                  .Metadata.SetValueComparer(stringListComparer);
+
+            entity.Property(p => p.PreferredSources).HasColumnType("TEXT")
+                  .HasConversion(
+                      v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                      v => System.Text.Json.JsonSerializer.Deserialize<List<JobSource>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
+                  .Metadata.SetValueComparer(sourceListComparer);
+
+            entity.Property(p => p.PreferredJobTypes).HasColumnType("TEXT")
+                  .HasConversion(
+                      v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                      v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
+                  .Metadata.SetValueComparer(stringListComparer);
+
+            entity.Property(p => p.PreferredLocationTypes).HasColumnType("TEXT")
+                  .HasConversion(
+                      v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                      v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
+                  .Metadata.SetValueComparer(stringListComparer);
+
+            entity.Property(p => p.DetectedSkills).HasColumnType("TEXT")
+                  .HasConversion(
+                      v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                      v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
+                  .Metadata.SetValueComparer(stringListComparer);
         });
 
         modelBuilder.Entity<JobApplication>(entity =>

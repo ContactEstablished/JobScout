@@ -10,6 +10,7 @@ namespace JobScout.Infrastructure.ExternalServices;
 
 public class RemoteOkClient(HttpClient http, ILogger<RemoteOkClient> logger) : IJobBoardClient
 {
+    public JobSource Source => JobSource.RemoteOK;
     private static readonly JsonSerializerOptions _json = new()
     {
         PropertyNameCaseInsensitive = true,
@@ -76,12 +77,18 @@ public class RemoteOkClient(HttpClient http, ILogger<RemoteOkClient> logger) : I
         }
     }
 
+    private static readonly string[] DefaultKeywords =
+        ["dotnet", ".net", "csharp", "c#", "azure", "backend", "api", "fullstack"];
+
     private static HashSet<string> ExtractKeywords(SearchProfile profile)
     {
+        // Prefer explicit search keywords from the profile
+        if (profile.SearchKeywords.Count > 0)
+            return profile.SearchKeywords.Select(k => k.ToLower()).ToHashSet();
+
         var text = $"{profile.Name} {profile.Description} {profile.ResumeText}".ToLower();
-        var defaults = new[] { "dotnet", ".net", "csharp", "c#", "azure", "backend", "api", "fullstack" };
-        var found = defaults.Where(k => text.Contains(k)).ToHashSet();
-        if (found.Count == 0) found = defaults.ToHashSet();
+        var found = DefaultKeywords.Where(k => text.Contains(k)).ToHashSet();
+        if (found.Count == 0) found = DefaultKeywords.ToHashSet();
         return found;
     }
 
