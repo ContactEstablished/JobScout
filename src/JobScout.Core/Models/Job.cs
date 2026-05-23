@@ -19,6 +19,9 @@ public class Job
     public JobSource Source { get; set; }
     public string SourceUrl { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
+    public bool IsPotentialDuplicate { get; set; }
+    public Guid? DuplicateOfJobId { get; set; }
+    public List<string> AlternateSourceUrls { get; set; } = [];
 
     public ICollection<AiScore> AiScores { get; set; } = [];
     public ICollection<UserRating> UserRatings { get; set; } = [];

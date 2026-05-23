@@ -17,10 +17,16 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<UserRating> UserRatings => Set<UserRating>();
     public DbSet<DailyMetric> DailyMetrics => Set<DailyMetric>();
     public DbSet<JobApplication> JobApplications => Set<JobApplication>();
+    public DbSet<CustomJobSource> CustomJobSources => Set<CustomJobSource>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        var stringListComparer2 = new ValueComparer<List<string>>(
+            (a, b) => a != null && b != null && a.SequenceEqual(b),
+            c => c.Aggregate(0, (a, v) => HashCode.Combine(a, v.GetHashCode())),
+            c => c.ToList());
 
         modelBuilder.Entity<Job>(entity =>
         {
@@ -30,6 +36,22 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
             entity.Property(j => j.LocationType).HasConversion<string>();
             entity.Property(j => j.JobType).HasConversion<string>();
             entity.HasIndex(j => new { j.ExternalId, j.Source }).IsUnique();
+
+            entity.Property(j => j.AlternateSourceUrls).HasColumnType("TEXT")
+                  .HasConversion(
+                      v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
+                      v => System.Text.Json.JsonSerializer.Deserialize<List<string>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
+                  .Metadata.SetValueComparer(stringListComparer2);
+        });
+
+        modelBuilder.Entity<CustomJobSource>(entity =>
+        {
+            entity.HasKey(c => c.Id);
+            entity.Property(c => c.Format).HasConversion<string>();
+            entity.HasOne(c => c.Profile)
+                  .WithMany(p => p.CustomSources)
+                  .HasForeignKey(c => c.ProfileId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<AiScore>(entity =>

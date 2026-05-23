@@ -30,4 +30,5 @@ public class SearchProfile
     public ICollection<UserRating> UserRatings { get; set; } = [];
     public ICollection<DailyMetric> DailyMetrics { get; set; } = [];
     public ICollection<JobApplication> Applications { get; set; } = [];
+    public ICollection<CustomJobSource> CustomSources { get; set; } = [];
 }

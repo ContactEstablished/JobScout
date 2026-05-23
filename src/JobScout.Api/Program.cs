@@ -104,13 +104,26 @@ builder.Services.AddHttpClient<RemoteOkClient>()
 builder.Services.AddHttpClient<AdzunaClient>();
 builder.Services.AddHttpClient<TheMuseClient>();
 builder.Services.AddHttpClient<SerpApiLinkedInClient>();
+builder.Services.AddHttpClient<SerpApiIndeedClient>();
+builder.Services.AddHttpClient<SerpApiGoogleJobsClient>();
+builder.Services.AddHttpClient<DiceClient>()
+    .ConfigureHttpClient(c => c.DefaultRequestHeaders.UserAgent.ParseAdd("JobScout/1.0"));
+builder.Services.AddHttpClient<WellfoundClient>();
+builder.Services.AddHttpClient<CustomSourceClient>()
+    .ConfigureHttpClient(c => c.DefaultRequestHeaders.UserAgent.ParseAdd("JobScout/1.0"));
 
 builder.Services.AddTransient<IJobBoardClient, RemoteOkClient>();
 builder.Services.AddTransient<IJobBoardClient, AdzunaClient>();
 builder.Services.AddTransient<IJobBoardClient, TheMuseClient>();
 builder.Services.AddTransient<IJobBoardClient, SerpApiLinkedInClient>();
+builder.Services.AddTransient<IJobBoardClient, SerpApiIndeedClient>();
+builder.Services.AddTransient<IJobBoardClient, SerpApiGoogleJobsClient>();
+builder.Services.AddTransient<IJobBoardClient, DiceClient>();
+builder.Services.AddTransient<IJobBoardClient, WellfoundClient>();
+builder.Services.AddTransient<IJobBoardClient, CustomSourceClient>();
 
 // Ingestion + AI
+builder.Services.AddScoped<IDeduplicationService, DeduplicationService>();
 builder.Services.AddScoped<IJobIngestionService, JobIngestionService>();
 builder.Services.AddHttpClient<ClaudeAiScoringService>();
 builder.Services.AddScoped<IAiScoringService, ClaudeAiScoringService>();

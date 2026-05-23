@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using JobScout.Core.Enums;
 using JobScout.Core.Interfaces;
 using JobScout.Core.Models;
@@ -87,5 +88,33 @@ public class JobRepository : IJobRepository
             .Where(j => j.Source == source && j.DiscoveredAt >= cutoff)
             .OrderByDescending(j => j.DiscoveredAt)
             .ToListAsync();
+    }
+
+    public async Task<Job?> FindFuzzyDuplicateAsync(string normalizedTitle, string normalizedCompany, JobSource excludeSource)
+    {
+        if (string.IsNullOrEmpty(normalizedTitle) || string.IsNullOrEmpty(normalizedCompany))
+            return null;
+
+        // Use the first significant word of the company as a DB-level pre-filter
+        var companyKey = normalizedCompany.Split(' ', StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+        if (companyKey is null) return null;
+
+        var candidates = await _db.Jobs
+            .Where(j => j.Source != excludeSource && EF.Functions.Like(j.Company.ToLower(), $"%{companyKey}%"))
+            .Take(200)
+            .ToListAsync();
+
+        // In-memory full normalized comparison
+        return candidates.FirstOrDefault(j =>
+            Normalize(j.Title) == normalizedTitle &&
+            Normalize(j.Company) == normalizedCompany);
+    }
+
+    // Mirrors the logic in DeduplicationService — kept local to avoid a circular dependency
+    private static string Normalize(string s)
+    {
+        s = s.ToLowerInvariant();
+        s = Regex.Replace(s, @"[^a-z0-9\s]", " ");
+        return string.Join(" ", s.Split(' ', StringSplitOptions.RemoveEmptyEntries)).Trim();
     }
 }

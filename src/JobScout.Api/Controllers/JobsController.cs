@@ -6,6 +6,7 @@ using JobScout.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 
 namespace JobScout.Api.Controllers;
 
@@ -79,5 +80,41 @@ public class JobsController : ControllerBase
             return NotFound();
 
         return Ok(score.ToDto());
+    }
+
+    [HttpPost("{id:guid}/confirm-duplicate")]
+    public async Task<IActionResult> ConfirmDuplicate(Guid id, [FromBody] ConfirmDuplicateRequest request)
+    {
+        var primary   = await _jobs.GetByIdAsync(id);
+        var duplicate = await _jobs.GetByIdAsync(request.DuplicateJobId);
+
+        if (primary is null || duplicate is null)
+            return NotFound();
+
+        if (!primary.AlternateSourceUrls.Contains(duplicate.SourceUrl))
+            primary.AlternateSourceUrls.Add(duplicate.SourceUrl);
+
+        duplicate.IsPotentialDuplicate = true;
+        duplicate.DuplicateOfJobId     = id;
+
+        await _jobs.UpdateAsync(primary);
+        await _jobs.UpdateAsync(duplicate);
+
+        return NoContent();
+    }
+
+    [HttpPost("{id:guid}/dismiss-duplicate")]
+    public async Task<IActionResult> DismissDuplicate(Guid id)
+    {
+        var job = await _jobs.GetByIdAsync(id);
+        if (job is null)
+            return NotFound();
+
+        job.IsPotentialDuplicate = false;
+        job.DuplicateOfJobId     = null;
+
+        await _jobs.UpdateAsync(job);
+
+        return NoContent();
     }
 }

@@ -1,4 +1,5 @@
 using JobScout.Core.DTOs;
+using JobScout.Core.Enums;
 using JobScout.Core.Models;
 
 namespace JobScout.Api.Mapping;
@@ -29,6 +30,8 @@ public static class MappingExtensions
             DiscoveredAt = job.DiscoveredAt,
             Source = job.Source,
             SourceUrl = job.SourceUrl,
+            IsPotentialDuplicate = job.IsPotentialDuplicate,
+            DuplicateOfJobId = job.DuplicateOfJobId,
             AiScore = score,
             UserRating = rating
         };
@@ -60,6 +63,9 @@ public static class MappingExtensions
             DiscoveredAt = job.DiscoveredAt,
             Source = job.Source,
             SourceUrl = job.SourceUrl,
+            IsPotentialDuplicate = job.IsPotentialDuplicate,
+            DuplicateOfJobId = job.DuplicateOfJobId,
+            AlternateSourceUrls = job.AlternateSourceUrls,
             AiScore = score,
             UserRating = rating
         };
@@ -104,6 +110,24 @@ public static class MappingExtensions
         LocationPreference = profile.LocationPreference,
         DetectedSkills = profile.DetectedSkills,
         ProfileColor = profile.ProfileColor
+    };
+
+    public static CustomJobSourceDto ToDto(this CustomJobSource source) => new()
+    {
+        Id = source.Id,
+        ProfileId = source.ProfileId,
+        Name = source.Name,
+        FeedUrl = source.FeedUrl,
+        Format = source.Format,
+        IsActive = source.IsActive,
+        CreatedAt = source.CreatedAt,
+        JsonJobsPath = source.JsonJobsPath,
+        JsonTitleField = source.JsonTitleField,
+        JsonCompanyField = source.JsonCompanyField,
+        JsonLocationField = source.JsonLocationField,
+        JsonDescriptionField = source.JsonDescriptionField,
+        JsonUrlField = source.JsonUrlField,
+        JsonPostedAtField = source.JsonPostedAtField
     };
 
     public static ApplicationDto ToDto(this JobApplication app) => new()

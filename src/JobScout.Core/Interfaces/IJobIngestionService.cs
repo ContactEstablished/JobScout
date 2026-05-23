@@ -6,6 +6,7 @@ public class IngestionResult
 {
     public int NewJobsFound { get; set; }
     public int Duplicates { get; set; }
+    public int FuzzyDuplicates { get; set; }
     public Dictionary<string, int> BySource { get; set; } = [];
 }
 
