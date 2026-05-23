@@ -9,5 +9,6 @@ public enum JobSource
     Wellfound,
     RemoteOK,
     Adzuna,
-    TheMuse
+    TheMuse,
+    Custom
 }

@@ -7,6 +7,7 @@ namespace JobScout.Infrastructure.Services;
 public class JobIngestionService(
     IEnumerable<IJobBoardClient> clients,
     IJobRepository jobs,
+    IDeduplicationService deduplication,
     ILogger<JobIngestionService> logger) : IJobIngestionService
 {
     public async Task<IngestionResult> IngestAsync(SearchProfile profile)
@@ -36,11 +37,24 @@ public class JobIngestionService(
         // Deduplicate and save
         foreach (var job in allFetched)
         {
+            // 1. Exact dedup: same ExternalId + Source
             var existing = await jobs.GetByExternalIdAsync(job.ExternalId, job.Source);
             if (existing is not null)
             {
                 result.Duplicates++;
                 continue;
+            }
+
+            // 2. Fuzzy dedup: same normalized title + company across different sources
+            var fuzzyMatch = await deduplication.FindFuzzyDuplicateAsync(job);
+            if (fuzzyMatch is not null)
+            {
+                job.IsPotentialDuplicate = true;
+                job.DuplicateOfJobId     = fuzzyMatch.Id;
+                result.FuzzyDuplicates++;
+                logger.LogDebug(
+                    "Fuzzy duplicate: '{Title}' @ '{Company}' ({Source}) matches job {MatchId}",
+                    job.Title, job.Company, job.Source, fuzzyMatch.Id);
             }
 
             await jobs.AddAsync(job);
@@ -51,8 +65,8 @@ public class JobIngestionService(
         }
 
         logger.LogInformation(
-            "Ingestion complete: {New} new, {Dupes} duplicates",
-            result.NewJobsFound, result.Duplicates);
+            "Ingestion complete: {New} new, {Dupes} exact duplicates, {Fuzzy} fuzzy duplicates",
+            result.NewJobsFound, result.Duplicates, result.FuzzyDuplicates);
 
         return result;
     }

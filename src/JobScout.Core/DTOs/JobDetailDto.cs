@@ -18,6 +18,9 @@ public class JobDetailDto
     public DateTime DiscoveredAt { get; set; }
     public JobSource Source { get; set; }
     public string SourceUrl { get; set; } = string.Empty;
+    public bool IsPotentialDuplicate { get; set; }
+    public Guid? DuplicateOfJobId { get; set; }
+    public List<string> AlternateSourceUrls { get; set; } = [];
     public AiScoreDto? AiScore { get; set; }
     public UserRatingDto? UserRating { get; set; }
 }

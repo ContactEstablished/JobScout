@@ -1,8 +1,8 @@
-# Phase 3: Application Tracking Pipeline
+# Phase 4: Job Board Expansion
 
-**Priority: HIGH** | **Branch:** `phase3/application-tracking`
+**Priority: MEDIUM** | **Branch:** `phase4/job-board-expansion`
 
-> Reference: [Roadmap.md](Roadmap.md) — Phase 3 (sections 3.1 through 3.5)
+> Reference: [Roadmap.md](Roadmap.md) — Phase 4 (sections 4.1 through 4.7)
 
 ---
 
@@ -10,17 +10,15 @@
 
 | # | Task | Status |
 |---|------|--------|
-| 3.1 | Expand JobApplication model + EF navigation properties | TODO |
-| 3.2 | IApplicationRepository + EF implementation | TODO |
-| 3.3 | IApplicationTrackingService + status transition logic | TODO |
-| 3.4 | ApplicationsController (5 endpoints) | TODO |
-| 3.5 | Application DTOs + mapping | TODO |
-| 3.6 | Applications.razor Kanban board page | TODO |
-| 3.7 | Quick-apply button on job cards | TODO |
-| 3.8 | Sidebar nav + badge count | TODO |
-| 3.9 | DailyMetric auto-increment on apply | TODO |
-| 3.10 | End-to-end verification | TODO |
-| 3.11 | Commit & PR | TODO |
+| 4.1 | IndeedClient via SerpAPI | DONE |
+| 4.2 | DiceClient via public search/RSS | DONE |
+| 4.3 | WellfoundClient via GraphQL | DONE |
+| 4.4 | GlassdoorClient or Google Jobs fallback | DONE |
+| 4.5 | Custom source support (entity + generic client) | DONE |
+| 4.6 | Cross-source fuzzy deduplication | DONE |
+| 4.7 | Canonical job linking | DONE |
+| 4.8 | End-to-end verification | DONE |
+| 4.9 | Commit & PR | TODO |
 
 ---
 
@@ -28,235 +26,283 @@
 
 The following already exist and should be leveraged:
 
-- **`JobApplication` model** — `src/JobScout.Core/Models/JobApplication.cs`
-  - Fields: `Id`, `JobId`, `ProfileId`, `AppliedAt`, `Status`, `Notes`
-  - Missing: navigation properties to `Job` and `SearchProfile`, status history tracking
-- **`ApplicationStatus` enum** — `src/JobScout.Core/Enums/ApplicationStatus.cs`
-  - Values: `Applied`, `Interviewing`, `Offered`, `Rejected`, `Withdrawn`
-  - Missing: `Accepted` value (referenced in Roadmap 3.3 Kanban columns)
-- **`DbSet<JobApplication>`** — already registered in `JobScoutDbContext`
-  - Entity config: `HasKey(Id)`, `Status` stored as string
-  - Missing: FK relationships to `Job` and `SearchProfile`, unique index on `(JobId, ProfileId)`
+- **`IJobBoardClient` interface** — `src/JobScout.Core/Interfaces/IJobBoardClient.cs`
+  - `JobSource Source { get; }`
+  - `Task<IReadOnlyList<Job>> FetchJobsAsync(SearchProfile profile, CancellationToken ct = default)`
+- **Four live client implementations** — `src/JobScout.Infrastructure/ExternalServices/`
+  - `SerpApiLinkedInClient.cs` — reference implementation for the SerpAPI pattern
+  - `AdzunaClient.cs`, `RemoteOkClient.cs`, `TheMuseClient.cs`
+- **`JobSource` enum** — `src/JobScout.Core/Enums/JobSource.cs`
+  - Already defines: `LinkedIn`, `Indeed`, `Glassdoor`, `Dice`, `Wellfound`, `RemoteOK`, `Adzuna`, `TheMuse`
+  - No new enum values needed — all target sources are pre-declared
+- **`Job` entity source fields** — `src/JobScout.Core/Models/Job.cs`
+  - `ExternalId` (string), `Source` (JobSource), `SourceUrl` (string)
+- **`JobIngestionService`** — `src/JobScout.Infrastructure/Services/JobIngestionService.cs`
+  - Discovers all registered `IJobBoardClient` implementations via DI
+  - Current deduplication: exact match on `(ExternalId, Source)` only
+- **`Program.cs`** — clients are registered individually; each new client needs its own `AddScoped<IJobBoardClient, XyzClient>()` registration
 
 ---
 
 ## Task Details
 
-### 3.1 Expand JobApplication Model + EF Navigation Properties
+### 4.1 IndeedClient via SerpAPI
+
+**Files to create:**
+- `src/JobScout.Infrastructure/ExternalServices/SerpApiIndeedClient.cs`
 
 **Files to modify:**
-- `src/JobScout.Core/Models/JobApplication.cs`
-- `src/JobScout.Core/Enums/ApplicationStatus.cs`
+- `src/JobScout.Api/Program.cs` (DI registration)
+
+**Requirements:**
+- [ ] Create `SerpApiIndeedClient : IJobBoardClient` with `Source => JobSource.Indeed`
+- [ ] Model the implementation after `SerpApiLinkedInClient` — reuse SerpAPI base URL and API key config (`SerpApi:ApiKey`)
+- [ ] Set `engine=indeed` in the query string parameters
+- [ ] Build query from `profile.SearchKeywords` (joined with space) and `profile.PreferredLocations` if available
+- [ ] Map Indeed response fields to the `Job` entity:
+  - `job_id` → `ExternalId`
+  - `title` → `Title`
+  - `company_name` → `Company`
+  - `location` → `Location`
+  - `description` → `Description`
+  - `detected_extensions.salary` → `SalaryRange` (nullable)
+  - `detected_extensions.job_type` → `JobType`
+  - `date_posted` → `PostedAt`
+  - `related_links[0].link` → `SourceUrl`
+- [ ] Set `Source = JobSource.Indeed` on every mapped job
+- [ ] Register in `Program.cs`: `builder.Services.AddScoped<IJobBoardClient, SerpApiIndeedClient>()`
+- [ ] Add null/missing-field guards for all optional response properties
+
+**Acceptance criteria:** `SerpApiIndeedClient` fetches jobs and returns a non-empty list against the live SerpAPI endpoint. Jobs appear in the feed with `Source = Indeed`.
+
+---
+
+### 4.2 DiceClient via Public Search Endpoint
+
+**Files to create:**
+- `src/JobScout.Infrastructure/ExternalServices/DiceClient.cs`
+
+**Files to modify:**
+- `src/JobScout.Api/Program.cs` (DI registration)
+- `appsettings.json` / user secrets (if Dice requires an API key)
+
+**Requirements:**
+- [ ] Create `DiceClient : IJobBoardClient` with `Source => JobSource.Dice`
+- [ ] Use Dice's public search API endpoint. Dice exposes a REST search endpoint at `https://job-search-api.skopenow.com` or the legacy `https://www.dice.com/jobs/q-{keyword}-jobs.rss` RSS feed — prefer REST if accessible without auth, fall back to RSS
+- [ ] If using REST: build query params from `profile.SearchKeywords`, map JSON response to `Job` entity
+- [ ] If using RSS/Atom: parse `<item>` elements using `System.ServiceModel.Syndication.SyndicationFeed` or a lightweight XML parser:
+  - `<title>` → `Title`
+  - `<author>` or `<dice:company>` → `Company`
+  - `<location>` or `<dice:location>` → `Location`
+  - `<description>` → `Description` (strip HTML tags)
+  - `<link>` → `SourceUrl`
+  - `<pubDate>` → `PostedAt`
+  - Generate `ExternalId` from a stable hash of `(Title + Company + SourceUrl)` if no explicit ID is in the feed
+- [ ] Register in `Program.cs`: `builder.Services.AddScoped<IJobBoardClient, DiceClient>()`
+
+**Acceptance criteria:** `DiceClient` returns mapped `Job` objects with `Source = Dice`. Build succeeds with 0 errors.
+
+---
+
+### 4.3 WellfoundClient via GraphQL
+
+**Files to create:**
+- `src/JobScout.Infrastructure/ExternalServices/WellfoundClient.cs`
+
+**Files to modify:**
+- `src/JobScout.Api/Program.cs` (DI registration)
+- `appsettings.json` / user secrets (`Wellfound:AccessToken`)
+
+**Requirements:**
+- [ ] Create `WellfoundClient : IJobBoardClient` with `Source => JobSource.Wellfound`
+- [ ] Wellfound uses a GraphQL API at `https://wellfound.com/graphql`. Authentication requires a bearer token obtained via Wellfound's developer portal
+- [ ] Store the access token under `Wellfound:AccessToken` in configuration
+- [ ] Build a GraphQL query for job listings filtered by keywords from `profile.SearchKeywords`:
+  ```graphql
+  query JobSearch($query: String!) {
+    jobListings(query: $query, first: 50) {
+      edges {
+        node {
+          id
+          title
+          description
+          jobType
+          locationNames
+          salary
+          applyUrl
+          createdAt
+          startup {
+            name
+          }
+        }
+      }
+    }
+  }
+  ```
+- [ ] Send as a `POST` request with `Content-Type: application/json` and `Authorization: Bearer {token}`
+- [ ] Map GraphQL response to `Job` entity:
+  - `node.id` → `ExternalId`
+  - `node.title` → `Title`
+  - `node.startup.name` → `Company`
+  - `node.locationNames[0]` → `Location`
+  - `node.description` → `Description`
+  - `node.salary` → `SalaryRange`
+  - `node.jobType` → `JobType`
+  - `node.applyUrl` → `SourceUrl`
+  - `node.createdAt` → `PostedAt`
+- [ ] If GraphQL schema differs, adapt field names accordingly — document any discrepancies in code comments
+- [ ] Register in `Program.cs`: `builder.Services.AddScoped<IJobBoardClient, WellfoundClient>()`
+
+**Acceptance criteria:** `WellfoundClient` authenticates and returns startup-focused job listings with `Source = Wellfound`.
+
+---
+
+### 4.4 GlassdoorClient or Google Jobs Fallback
+
+**Files to create:**
+- `src/JobScout.Infrastructure/ExternalServices/SerpApiGoogleJobsClient.cs` (fallback, preferred if Glassdoor partner access is unavailable)
+- _or_ `src/JobScout.Infrastructure/ExternalServices/GlassdoorClient.cs` (if partner API approved)
+
+**Files to modify:**
+- `src/JobScout.Api/Program.cs` (DI registration)
+
+**Requirements:**
+- [ ] **Preferred path — Google Jobs via SerpAPI:** Create `SerpApiGoogleJobsClient : IJobBoardClient` with `Source => JobSource.Glassdoor`
+  - Use `engine=google_jobs` SerpAPI parameter
+  - Build query from `profile.SearchKeywords`
+  - Map `google_jobs_listing` response fields to `Job`:
+    - `job_id` → `ExternalId`
+    - `title` → `Title`
+    - `company_name` → `Company`
+    - `location` → `Location`
+    - `description` → `Description`
+    - `detected_extensions.salary` → `SalaryRange`
+    - `detected_extensions.schedule_type` → `JobType`
+    - `detected_extensions.posted_at` → parse to `PostedAt`
+    - `related_links[0].link` → `SourceUrl`
+  - Reuse SerpAPI key from existing configuration
+- [ ] **Alternative path — Glassdoor partner API:** If partner access is obtained, create `GlassdoorClient` using their REST API. Store `Glassdoor:PartnerId` and `Glassdoor:PartnerKey` in configuration
+- [ ] Register whichever client is implemented in `Program.cs`
+
+**Acceptance criteria:** Client returns jobs attributed to `JobSource.Glassdoor`. SerpAPI key config is shared with existing LinkedIn client.
+
+---
+
+### 4.5 Custom Source Support
+
+**Files to create:**
+- `src/JobScout.Core/Models/CustomJobSource.cs`
+- `src/JobScout.Infrastructure/ExternalServices/CustomSourceClient.cs`
+- EF Core migration: `AddCustomJobSource`
+
+**Files to modify:**
 - `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs`
+- `src/JobScout.Core/Enums/JobSource.cs`
+- `src/JobScout.Api/Program.cs`
 
 **Requirements:**
-- [ ] Add `Accepted` to `ApplicationStatus` enum (Roadmap 3.3 specifies an "Accepted" Kanban column)
-- [ ] Add navigation properties to `JobApplication`: `Job Job`, `SearchProfile Profile`
-- [ ] Add `StatusHistory` property — `List<StatusChange>` stored as JSON, where `StatusChange` is a record with `Status`, `ChangedAt`, `Notes`
-- [ ] Add `ICollection<JobApplication> Applications` navigation to `SearchProfile` and `Job` models
-- [ ] Configure FK relationships in `JobScoutDbContext.OnModelCreating`:
-  - `JobApplication.JobId` → `Job.Id` (cascade delete)
-  - `JobApplication.ProfileId` → `SearchProfile.Id` (cascade delete)
-  - Unique index on `(JobId, ProfileId)` — one application per job per profile
-- [ ] JSON column config for `StatusHistory` with value comparer
-- [ ] Generate EF Core migration: `AddApplicationTracking`
-- [ ] Verify migration applies cleanly
+- [ ] Add `Custom` value to `JobSource` enum
+- [ ] Create `CustomJobSource` entity:
+  - `Guid Id`
+  - `string Name` — display name for the source
+  - `string FeedUrl` — the RSS/Atom or JSON endpoint URL
+  - `FeedFormat Format` (new enum: `Rss`, `Atom`, `Json`)
+  - `string? JsonJobsPath` — dot-notation path to the jobs array in a JSON response (e.g., `"results.jobs"`)
+  - `string? JsonTitleField`, `JsonCompanyField`, `JsonLocationField`, `JsonDescriptionField`, `JsonUrlField`, `JsonPostedAtField` — field name mappings for JSON sources
+  - `string ProfileId` — FK to `SearchProfile` (custom sources are per-profile)
+  - `bool IsActive`
+  - `DateTimeOffset CreatedAt`
+- [ ] Register `DbSet<CustomJobSource>` in `JobScoutDbContext`
+- [ ] Configure FK: `CustomJobSource.ProfileId` → `SearchProfile.Id` (cascade delete)
+- [ ] Generate migration `AddCustomJobSource`
+- [ ] Create `CustomSourceClient : IJobBoardClient`:
+  - `Source => JobSource.Custom`
+  - Accepts `IEnumerable<CustomJobSource>` via DI or fetches from repository
+  - **RSS/Atom path:** Use `System.ServiceModel.Syndication.SyndicationFeed.Load()` — map `<item>` elements to `Job`
+  - **JSON path:** Use `System.Text.Json` with `JsonPath`-style traversal to locate the jobs array, then map fields using the configured `JsonXxxField` properties
+  - Set `ExternalId` = stable hash of `(Name + SourceUrl)` for feeds without explicit IDs
+  - Filter active custom sources belonging to the active profile before fetching
+- [ ] Add CRUD endpoints to an appropriate controller (or new `CustomSourcesController`):
+  - `GET /api/custom-sources?profileId=`
+  - `POST /api/custom-sources`
+  - `DELETE /api/custom-sources/{id}`
 
-**Acceptance criteria:** Migration adds FK constraints and unique index. Build succeeds with 0 errors.
+**Acceptance criteria:** A user can add an RSS feed URL, and jobs from that feed appear in the job feed under `Source = Custom`. Migration applies cleanly.
 
 ---
 
-### 3.2 IApplicationRepository + EF Implementation
+### 4.6 Cross-Source Fuzzy Deduplication
 
 **Files to create:**
-- `src/JobScout.Core/Interfaces/IApplicationRepository.cs`
-- `src/JobScout.Infrastructure/Repositories/ApplicationRepository.cs`
-
-**Requirements:**
-- [ ] `GetByProfileAsync(Guid profileId, string userId, ApplicationStatus? status = null)` — returns applications for a profile, optionally filtered by status. Include `Job` navigation.
-- [ ] `GetByIdAsync(Guid id, string userId)` — single application by ID with `Job` included. Verify ownership via profile's UserId.
-- [ ] `GetByJobAsync(Guid jobId, Guid profileId, string userId)` — check if application exists for a specific job+profile combo
-- [ ] `GetPipelineAsync(Guid profileId, string userId)` — return aggregated counts per status
-- [ ] `AddAsync(JobApplication application)` — insert
-- [ ] `UpdateAsync(JobApplication application)` — update
-- [ ] `DeleteAsync(Guid id, string userId)` — delete with ownership check
-- [ ] `GetActiveCountAsync(string userId)` — count of non-Rejected, non-Withdrawn applications (for sidebar badge)
-- [ ] Register in DI: `builder.Services.AddScoped<IApplicationRepository, ApplicationRepository>()`
-
-**Acceptance criteria:** All repository methods compile. Ownership scoping flows through `SearchProfile.UserId`.
-
----
-
-### 3.3 IApplicationTrackingService + Status Transition Logic
-
-**Files to create:**
-- `src/JobScout.Core/Interfaces/IApplicationTrackingService.cs`
-- `src/JobScout.Infrastructure/Services/ApplicationTrackingService.cs`
-
-**Requirements:**
-- [ ] `ApplyAsync(Guid jobId, Guid profileId, string userId, string? notes)` — creates application with `Applied` status, records initial `StatusChange`, returns created application
-- [ ] `UpdateStatusAsync(Guid applicationId, ApplicationStatus newStatus, string userId, string? notes)` — validates transition, appends to `StatusHistory`, updates status
-- [ ] `GetPipelineAsync(Guid profileId, string userId)` — delegates to repository, returns `PipelineDto` with counts
-- [ ] Enforce valid status transitions:
-  - `Applied` → `Interviewing`, `Rejected`, `Withdrawn`
-  - `Interviewing` → `Offered`, `Rejected`, `Withdrawn`
-  - `Offered` → `Accepted`, `Rejected`, `Withdrawn`
-  - `Accepted` → `Withdrawn`
-  - `Rejected` → (terminal, no transitions)
-  - `Withdrawn` → (terminal, no transitions)
-- [ ] Return error/exception for invalid transitions
-- [ ] Register in DI: `builder.Services.AddScoped<IApplicationTrackingService, ApplicationTrackingService>()`
-
-**Acceptance criteria:** Invalid transitions are rejected. Status history records each change with timestamp and notes.
-
----
-
-### 3.4 ApplicationsController (5 Endpoints)
-
-**File to create:**
-- `src/JobScout.Api/Controllers/ApplicationsController.cs`
-
-**Requirements:**
-- [ ] `[ApiController]`, `[Authorize]`, `[Route("api/[controller]")]`
-- [ ] Inject `IApplicationTrackingService`, `IApplicationRepository`, `ICurrentUserService`
-- [ ] `POST /api/applications` — body: `{ jobId, profileId, notes? }`. Returns 201 with created application DTO. Returns 409 if application already exists for that job+profile.
-- [ ] `GET /api/applications?profileId={guid}&status={status?}` — list applications with optional status filter. Returns list of application DTOs with job summary included.
-- [ ] `GET /api/applications/pipeline?profileId={guid}` — returns `{ applied, interviewing, offered, accepted, rejected, withdrawn }` counts
-- [ ] `PUT /api/applications/{id}/status` — body: `{ status, notes? }`. Returns 200 on success, 400 on invalid transition.
-- [ ] `DELETE /api/applications/{id}` — hard delete. Returns 204.
-
-**Acceptance criteria:** All 5 endpoints return correct status codes. Invalid transitions return 400 with message.
-
----
-
-### 3.5 Application DTOs + Mapping
-
-**Files to create/modify:**
-- `src/JobScout.Core/DTOs/ApplicationDtos.cs` (new)
-- `src/JobScout.Api/Mapping/MappingExtensions.cs` (modify)
-
-**DTOs to create:**
-- [ ] `CreateApplicationRequest` — `JobId`, `ProfileId`, `Notes?`
-- [ ] `UpdateStatusRequest` — `Status` (ApplicationStatus), `Notes?`
-- [ ] `ApplicationDto` — `Id`, `JobId`, `ProfileId`, `AppliedAt`, `Status`, `Notes`, `StatusHistory`, `Job` (JobSummaryDto)
-- [ ] `StatusChangeDto` — `Status`, `ChangedAt`, `Notes`
-- [ ] `PipelineDto` — `Applied`, `Interviewing`, `Offered`, `Accepted`, `Rejected`, `Withdrawn` (all int)
-
-**Mapping:**
-- [ ] `ToDto()` extension for `JobApplication` → `ApplicationDto` (include job summary mapping)
-
-**Acceptance criteria:** All DTOs serialize correctly with `JsonStringEnumConverter`.
-
----
-
-### 3.6 Applications.razor Kanban Board Page
-
-**Files to create/modify:**
-- `src/JobScout.Web/Pages/Applications.razor` (new)
-- `src/JobScout.Web/Services/ApplicationsService.cs` (new)
-- `src/JobScout.Web/wwwroot/css/app.css` (modify)
-
-**ApplicationsService methods:**
-- [ ] `GetByProfileAsync(Guid profileId, ApplicationStatus? status)` → `List<ApplicationDto>`
-- [ ] `CreateAsync(CreateApplicationRequest)` → `ApplicationDto?`
-- [ ] `UpdateStatusAsync(Guid id, UpdateStatusRequest)` → `bool`
-- [ ] `DeleteAsync(Guid id)` → `bool`
-- [ ] `GetPipelineAsync(Guid profileId)` → `PipelineDto`
-
-**Page requirements:**
-- [ ] Route: `/applications`
-- [ ] Scoped to active profile (from `ProfileStateService`)
-- [ ] Pipeline summary bar at top showing counts per status
-- [ ] Kanban columns: Applied, Interviewing, Offered, Accepted, Rejected
-  - Each column shows application cards with: job title, company, date applied, days-in-stage counter
-  - Status dropdown on each card for quick status updates
-  - Delete button on each card
-- [ ] Empty state when no applications exist
-- [ ] Click card to expand and show status timeline (list of StatusChange entries with timestamps and notes)
-- [ ] Consistent dark-mode styling matching existing pages
-
-**CSS requirements:**
-- [ ] `.kanban-board` — horizontal flex container for columns
-- [ ] `.kanban-column` — vertical column with header showing status + count
-- [ ] `.kanban-card` — individual application card
-- [ ] `.timeline` — status history timeline within expanded card
-- [ ] Responsive: columns stack vertically on mobile
-
-**Acceptance criteria:** Page renders with all columns. Status updates via dropdown work. Timeline shows history.
-
----
-
-### 3.7 Quick-Apply Button on Job Cards
+- `src/JobScout.Infrastructure/Services/DeduplicationService.cs`
+- `src/JobScout.Core/Interfaces/IDeduplicationService.cs`
 
 **Files to modify:**
-- `src/JobScout.Web/Pages/Home.razor` (or wherever JobCard is rendered)
-- Possibly `src/JobScout.Web/Components/` if a JobCard component exists
+- `src/JobScout.Infrastructure/Services/JobIngestionService.cs`
+- `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs` (potential duplicate flag on `Job`)
+- `src/JobScout.Core/Models/Job.cs`
 
 **Requirements:**
-- [ ] Add "Apply" button to each job card in the feed
-- [ ] Clicking opens a compact modal/popover with:
-  - Job title + company (confirmation)
-  - Notes textarea (optional)
-  - "Track Application" button
-- [ ] On confirm: calls `POST /api/applications`, opens `job.SourceUrl` in new tab
-- [ ] Button changes to "Applied ✓" after successful creation
-- [ ] If application already exists for this job+profile, show "Applied ✓" by default
+- [ ] Add `bool IsPotentialDuplicate` and `Guid? DuplicateOfJobId` (nullable) fields to the `Job` entity
+- [ ] Generate migration `AddDuplicateFields`
+- [ ] Create `IDeduplicationService` with:
+  - `NormalizeTitle(string title) → string` — lowercase, strip punctuation, collapse whitespace, remove common stopwords (Sr., Junior, Remote, etc.)
+  - `NormalizeCompany(string company) → string` — lowercase, strip legal suffixes (Inc., LLC, Ltd.), collapse whitespace
+  - `Task<Guid?> FindDuplicateAsync(Job candidate, Guid profileId)` — returns the ID of an existing job if a fuzzy match is found, otherwise null
+- [ ] Fuzzy match criteria: `NormalizeTitle` match AND `NormalizeCompany` match AND same `Location` (normalized) across different `Source` values
+- [ ] Integrate into `JobIngestionService`:
+  - After the existing exact-match dedup check passes, run fuzzy duplicate check via `IDeduplicationService`
+  - If fuzzy match found: set `IsPotentialDuplicate = true` and `DuplicateOfJobId = matchedJob.Id` on the incoming job, then save it (do not discard — let the user review)
+  - Track fuzzy duplicate count separately in `IngestionResult`
+- [ ] Register `IDeduplicationService` in `Program.cs`
 
-**Acceptance criteria:** Apply flow creates application and opens job URL. Applied state persists across page refreshes.
+**Acceptance criteria:** Jobs from two different sources with identical normalized titles and companies are flagged as potential duplicates. Exact-match deduplication still works unchanged.
 
 ---
 
-### 3.8 Sidebar Nav + Badge Count
+### 4.7 Canonical Job Linking
 
 **Files to modify:**
-- `src/JobScout.Web/Components/Sidebar.razor`
-- `src/JobScout.Web/Services/ApplicationsService.cs`
+- `src/JobScout.Core/Models/Job.cs`
+- `src/JobScout.Infrastructure/Data/JobScoutDbContext.cs`
+- `src/JobScout.Api/Controllers/JobsController.cs`
 
 **Requirements:**
-- [ ] Add "Applications" nav item to sidebar (between Profiles and Analytics sections)
-- [ ] Icon: `ti ti-briefcase` or `ti ti-clipboard-list`
-- [ ] Badge showing active application count (non-Rejected, non-Withdrawn)
-- [ ] Badge updates when applications are created or status changes
-- [ ] Link navigates to `/applications`
+- [ ] Add `ICollection<string> AlternateSourceUrls` to `Job`, stored as JSON — collects additional source URLs when duplicates are confirmed
+- [ ] Generate migration `AddAlternateSourceUrls`
+- [ ] Add endpoint `POST /api/jobs/{id}/confirm-duplicate` — body: `{ duplicateJobId: Guid }`:
+  - Copies `duplicateJob.SourceUrl` into `primaryJob.AlternateSourceUrls`
+  - Sets `duplicateJob.IsPotentialDuplicate = true` and `duplicateJob.DuplicateOfJobId = id`
+  - Does not delete the secondary listing
+- [ ] Add endpoint `POST /api/jobs/{id}/dismiss-duplicate`:
+  - Clears `IsPotentialDuplicate` and `DuplicateOfJobId` on the specified job
+- [ ] Expose `IsPotentialDuplicate` and `AlternateSourceUrls` in the `JobDto`
 
-**Acceptance criteria:** Sidebar shows Applications link with live count badge.
+**Acceptance criteria:** Confirming a duplicate links the two records. The primary job's `AlternateSourceUrls` includes the secondary listing's URL. Dismissing clears the flag.
 
 ---
 
-### 3.9 DailyMetric Auto-Increment on Apply
-
-**Files to modify:**
-- `src/JobScout.Infrastructure/Services/ApplicationTrackingService.cs`
-- `src/JobScout.Core/Interfaces/IMetricsService.cs` (if needed)
-
-**Requirements:**
-- [ ] When `ApplyAsync` creates a new application, increment today's `DailyMetric.Applied` count for the relevant profile and source
-- [ ] If no `DailyMetric` exists for today's date + profile + source, create one
-- [ ] Determine the source from the `Job.Source` field
-
-**Acceptance criteria:** Creating an application increments the Applied count in DailyMetrics.
-
----
-
-### 3.10 End-to-End Verification
+### 4.8 End-to-End Verification
 
 - [ ] Solution builds: 0 errors, 0 warnings across all projects
-- [ ] Migration applies cleanly
-- [ ] `POST /api/applications` creates application, returns 201
-- [ ] `POST /api/applications` with duplicate job+profile returns 409
-- [ ] `GET /api/applications?profileId=` returns list with job details
-- [ ] `GET /api/applications/pipeline?profileId=` returns correct counts
-- [ ] `PUT /api/applications/{id}/status` with valid transition returns 200
-- [ ] `PUT /api/applications/{id}/status` with invalid transition returns 400
-- [ ] `DELETE /api/applications/{id}` returns 204
-- [ ] Status history records all transitions with timestamps
-- [ ] Sidebar badge shows correct active count
-- [ ] Kanban board renders with correct columns and cards
+- [ ] All migrations apply cleanly on a fresh database
+- [ ] `SerpApiIndeedClient` returns jobs when triggered via manual ingestion; jobs appear with `Source = Indeed`
+- [ ] `DiceClient` returns jobs; jobs appear with `Source = Dice`
+- [ ] `WellfoundClient` authenticates and returns jobs with `Source = Wellfound`
+- [ ] `SerpApiGoogleJobsClient` (or `GlassdoorClient`) returns jobs with `Source = Glassdoor`
+- [ ] Custom RSS source: add a sample RSS feed URL, trigger ingestion, jobs appear with `Source = Custom`
+- [ ] Custom JSON source: add a sample JSON endpoint with field mappings, jobs appear correctly mapped
+- [ ] Fuzzy deduplication: ingest two sources for the same job posting — second ingestion sets `IsPotentialDuplicate = true`
+- [ ] Exact deduplication still works — re-ingesting the same `(ExternalId, Source)` does not create a duplicate
+- [ ] `POST /api/jobs/{id}/confirm-duplicate` links records and populates `AlternateSourceUrls`
+- [ ] `POST /api/jobs/{id}/dismiss-duplicate` clears the flag
+- [ ] AI scoring works for jobs from all new sources
+- [ ] `JobSource` enum values for all new sources are serialized correctly in API responses
 
 ---
 
-### 3.11 Commit & PR
+### 4.9 Commit & PR
 
-- [ ] Stage all Phase 3 changes
+- [ ] Stage all Phase 4 changes
 - [ ] Commit with descriptive message
 - [ ] Create PR targeting `main`

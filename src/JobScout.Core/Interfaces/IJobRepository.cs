@@ -20,4 +20,5 @@ public interface IJobRepository
     Task AddAsync(Job job);
     Task UpdateAsync(Job job);
     Task<IReadOnlyList<Job>> GetRecentBySourceAsync(JobSource source, int days);
+    Task<Job?> FindFuzzyDuplicateAsync(string normalizedTitle, string normalizedCompany, JobSource excludeSource);
 }
