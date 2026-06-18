@@ -172,4 +172,18 @@ public static class MappingExtensions
         }).ToList(),
         Job = app.Job?.ToSummaryDto(app.ProfileId)
     };
+
+    public static FilterPresetDto ToDto(this FilterPreset p) => new()
+    {
+        Id = p.Id,
+        ProfileId = p.ProfileId,
+        Name = p.Name,
+        Source = p.Source,
+        MinScore = p.MinScore,
+        LocationType = p.LocationType,
+        JobType = p.JobType,
+        Query = p.Query,
+        SortBy = p.SortBy,
+        CreatedAt = p.CreatedAt
+    };
 }

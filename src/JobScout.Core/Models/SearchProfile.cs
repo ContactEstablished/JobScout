@@ -36,4 +36,5 @@ public class SearchProfile
     public ICollection<DailyMetric> DailyMetrics { get; set; } = [];
     public ICollection<JobApplication> Applications { get; set; } = [];
     public ICollection<CustomJobSource> CustomSources { get; set; } = [];
+    public ICollection<FilterPreset> FilterPresets { get; set; } = [];
 }

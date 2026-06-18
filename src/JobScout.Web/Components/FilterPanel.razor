@@ -1,4 +1,7 @@
 @inject FilterStateService Filters
+@inject FilterPresetsService PresetsApi
+@inject ProfileStateService ProfileState
+@inject ToastService Toast
 @implements IDisposable
 
 <div class="drawer-backdrop @(Filters.IsFilterPanelOpen ? "open" : "")"
@@ -7,6 +10,35 @@
 <div class="filter-panel @(Filters.IsFilterPanelOpen ? "open" : "")">
     <h2>Filter Jobs</h2>
     <p>Narrow down your job feed with these filters.</p>
+
+    <div class="preset-bar">
+        <label>Saved presets</label>
+        @if (_presets.Count > 0)
+        {
+            <div class="preset-list">
+                @foreach (var p in _presets)
+                {
+                    <div class="preset-row">
+                        <button class="preset-apply" @onclick="() => ApplyPreset(p)" title="Apply this preset">
+                            <i class="ti ti-bookmark"></i> @p.Name
+                        </button>
+                        <button class="preset-del" @onclick="() => DeletePreset(p)" title="Delete preset">×</button>
+                    </div>
+                }
+            </div>
+        }
+        else
+        {
+            <p class="preset-empty">No saved presets for this profile yet.</p>
+        }
+        <div class="preset-save">
+            <input placeholder="Name this filter…" @bind="_newPresetName" maxlength="100" />
+            <button class="ghost-button" @onclick="SavePreset"
+                    disabled="@string.IsNullOrWhiteSpace(_newPresetName)">
+                Save current
+            </button>
+        </div>
+    </div>
 
     <div class="filter-grid">
         <div class="filter-field">
@@ -64,14 +96,72 @@
 </div>
 
 @code {
+    private List<FilterPresetDto> _presets = [];
+    private string? _newPresetName;
+
     private string? _minScoreStr
     {
         get => Filters.MinScore?.ToString();
         set => Filters.MinScore = decimal.TryParse(value, out var d) ? d : null;
     }
 
-    protected override void OnInitialized()
-        => Filters.OnPanelToggled += StateHasChanged;
+    protected override async Task OnInitializedAsync()
+    {
+        Filters.OnPanelToggled += StateHasChanged;
+        ProfileState.OnChange += OnProfileChanged;
+        await LoadPresetsAsync();
+    }
+
+    private async void OnProfileChanged()
+    {
+        await LoadPresetsAsync();
+        StateHasChanged();
+    }
+
+    private async Task LoadPresetsAsync()
+    {
+        if (ProfileState.ActiveProfile is null)
+        {
+            _presets = [];
+            return;
+        }
+        _presets = await PresetsApi.GetAsync(ProfileState.ActiveProfile.Id);
+    }
+
+    private void ApplyPreset(FilterPresetDto preset)
+    {
+        Filters.CloseFilterPanel();
+        Filters.LoadFrom(preset);   // fires OnFiltersChanged → the feed reloads
+    }
+
+    private async Task SavePreset()
+    {
+        if (ProfileState.ActiveProfile is null || string.IsNullOrWhiteSpace(_newPresetName))
+            return;
+
+        var saved = await PresetsApi.SaveAsync(
+            Filters.ToSaveRequest(ProfileState.ActiveProfile.Id, _newPresetName.Trim()));
+
+        if (saved is not null)
+        {
+            _newPresetName = null;
+            await LoadPresetsAsync();
+            Toast.Show("Preset saved.");
+        }
+        else
+        {
+            Toast.ShowError("Couldn't save preset — the name may already be in use.");
+        }
+    }
+
+    private async Task DeletePreset(FilterPresetDto preset)
+    {
+        if (await PresetsApi.DeleteAsync(preset.Id))
+        {
+            await LoadPresetsAsync();
+            Toast.Show("Preset deleted.");
+        }
+    }
 
     private void Apply()
     {
@@ -86,5 +176,8 @@
     }
 
     public void Dispose()
-        => Filters.OnPanelToggled -= StateHasChanged;
+    {
+        Filters.OnPanelToggled -= StateHasChanged;
+        ProfileState.OnChange -= OnProfileChanged;
+    }
 }

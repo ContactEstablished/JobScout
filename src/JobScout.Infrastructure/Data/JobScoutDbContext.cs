@@ -21,6 +21,7 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<NotificationPreferences> NotificationPreferences => Set<NotificationPreferences>();
     public DbSet<AppSecret> AppSecrets => Set<AppSecret>();
+    public DbSet<FilterPreset> FilterPresets => Set<FilterPreset>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -188,6 +189,22 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
                       v => System.Text.Json.JsonSerializer.Serialize(v, (System.Text.Json.JsonSerializerOptions?)null),
                       v => System.Text.Json.JsonSerializer.Deserialize<List<StatusChange>>(v, (System.Text.Json.JsonSerializerOptions?)null) ?? new())
                   .Metadata.SetValueComparer(statusChangeComparer);
+        });
+
+        modelBuilder.Entity<FilterPreset>(entity =>
+        {
+            entity.HasKey(p => p.Id);
+            entity.Property(p => p.Name).HasMaxLength(100);
+            entity.Property(p => p.Source).HasConversion<string>();
+            entity.Property(p => p.LocationType).HasConversion<string>();
+            entity.Property(p => p.JobType).HasConversion<string>();
+            entity.Property(p => p.SortBy).HasConversion<string>();
+            entity.Property(p => p.MinScore).HasPrecision(4, 2);
+            entity.HasIndex(p => new { p.ProfileId, p.Name }).IsUnique();
+            entity.HasOne(p => p.Profile)
+                  .WithMany(sp => sp.FilterPresets)
+                  .HasForeignKey(p => p.ProfileId)
+                  .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

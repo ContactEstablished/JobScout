@@ -1,0 +1,82 @@
+.preset-bar {
+    margin: 4px 0 20px;
+    padding-bottom: 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.preset-bar > label {
+    display: block;
+    font-size: 0.8rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    opacity: 0.7;
+    margin-bottom: 8px;
+}
+
+.preset-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.preset-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.preset-apply {
+    flex: 1;
+    text-align: left;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.preset-apply:hover {
+    border-color: var(--teal, #2dd4bf);
+}
+
+.preset-del {
+    width: 34px;
+    height: 34px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: transparent;
+    color: inherit;
+    font-size: 1.1rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.preset-del:hover {
+    border-color: #f87171;
+    color: #f87171;
+}
+
+.preset-empty {
+    font-size: 0.85rem;
+    opacity: 0.6;
+    margin: 0 0 10px;
+}
+
+.preset-save {
+    display: flex;
+    gap: 6px;
+}
+
+.preset-save input {
+    flex: 1;
+    height: 38px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.04);
+    color: inherit;
+}
