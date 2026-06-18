@@ -14,6 +14,7 @@ public class AiScoreBuilder
     public AiScoreBuilder ForJob(Guid jobId) { _jobId = jobId; return this; }
     public AiScoreBuilder ForProfile(Guid profileId) { _profileId = profileId; return this; }
     public AiScoreBuilder WithScore(decimal score) { _score = score; return this; }
+    public AiScoreBuilder WithReasoning(string reasoning) { _reasoning = reasoning; return this; }
     public AiScoreBuilder WithModelVersion(string version) { _modelVersion = version; return this; }
 
     public AiScore Build() => new()

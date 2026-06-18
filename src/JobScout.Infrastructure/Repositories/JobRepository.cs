@@ -44,7 +44,11 @@ public class JobRepository : IJobRepository
                 var q = filters.Query.ToLower();
                 query = query.Where(j =>
                     j.Title.ToLower().Contains(q) ||
-                    j.Company.ToLower().Contains(q));
+                    j.Company.ToLower().Contains(q) ||
+                    j.Description.ToLower().Contains(q) ||
+                    j.Tags.ToLower().Contains(q) ||
+                    j.AiScores.Any(s => s.ProfileId == profileId &&
+                                        s.Reasoning.ToLower().Contains(q)));
             }
 
             if (filters.MinScore.HasValue)
@@ -55,7 +59,17 @@ public class JobRepository : IJobRepository
             }
         }
 
-        query = query.OrderByDescending(j => j.DiscoveredAt);
+        query = (filters?.SortBy ?? JobSortBy.AiScore) switch
+        {
+            JobSortBy.PostedDate => query.OrderByDescending(j => j.PostedAt ?? j.DiscoveredAt),
+            JobSortBy.Company    => query.OrderBy(j => j.Company),
+            _ /* AiScore */      => query.OrderByDescending(j => j.AiScores
+                                        .Where(s => s.ProfileId == profileId)
+                                        .Max(s => (decimal?)s.Score)),
+        };
+
+        // Stable, deterministic tie-breaker for every sort.
+        query = ((IOrderedQueryable<Job>)query).ThenByDescending(j => j.DiscoveredAt);
 
         var totalCount = await query.CountAsync();
         var items = await query

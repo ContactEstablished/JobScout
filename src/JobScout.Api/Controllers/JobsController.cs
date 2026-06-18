@@ -32,6 +32,7 @@ public class JobsController : ControllerBase
         [FromQuery] LocationType? locationType,
         [FromQuery] JobType? jobType,
         [FromQuery] string? q,
+        [FromQuery] JobSortBy sort = JobSortBy.AiScore,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
@@ -44,7 +45,8 @@ public class JobsController : ControllerBase
             MinScore = minScore,
             LocationType = locationType,
             JobType = jobType,
-            Query = q
+            Query = q,
+            SortBy = sort
         };
 
         var (items, totalCount) = await _jobs.GetByProfileAsync(profileId.Value, filters, page, pageSize);

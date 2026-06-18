@@ -7,4 +7,5 @@ public class JobsFilter
     public string? LocationType { get; set; }
     public string? JobType { get; set; }
     public string? Query { get; set; }
+    public string? SortBy { get; set; }
 }
