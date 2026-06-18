@@ -1,33 +1,85 @@
 using JobScout.Core.Enums;
 using JobScout.Core.Interfaces;
+using JobScout.Core.Models;
 using JobScout.Infrastructure.Data;
 using JobScout.Infrastructure.Email.Templates;
 using JobScout.Infrastructure.Identity;
 using JobScout.Infrastructure.Services;
-using Microsoft.Azure.Functions.Worker;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
-namespace JobScout.Functions;
+namespace JobScout.Infrastructure.Scheduling;
 
-public class WeeklySummaryFunction(
-    JobScoutDbContext db,
-    IEmailSender email,
+/// <summary>
+/// Sends the weekly summary email Mondays at 14:00 UTC.
+/// Replaces the Azure Function `WeeklySummaryTimer`.
+/// </summary>
+public class WeeklySummaryScheduler(
+    IServiceScopeFactory scopeFactory,
     IConfiguration config,
-    ILogger<WeeklySummaryFunction> logger)
+    ILogger<WeeklySummaryScheduler> logger) : BackgroundService
 {
-    // Monday 14:00 UTC
-    [Function("WeeklySummaryTimer")]
-    public async Task Run([TimerTrigger("0 0 14 * * MON")] TimerInfo timer)
+    private static readonly TimeOnly TargetUtc = new(14, 0);
+    private const DayOfWeek TargetDay = DayOfWeek.Monday;
+
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var appBaseUrl = config["AppBaseUrl"] ?? "https://localhost:7036";
+        if (!config.GetValue("Scheduling:Enabled", true))
+        {
+            logger.LogInformation("WeeklySummaryScheduler disabled via config");
+            return;
+        }
+
+        logger.LogInformation(
+            "WeeklySummaryScheduler started — fires {Day} {Time} UTC", TargetDay, TargetUtc);
+
+        while (!stoppingToken.IsCancellationRequested)
+        {
+            var wait = TimeUntilNextRun(DateTimeOffset.UtcNow);
+            logger.LogInformation("WeeklySummaryScheduler sleeping {Wait} until next run", wait);
+            try { await Task.Delay(wait, stoppingToken); }
+            catch (TaskCanceledException) { return; }
+
+            try
+            {
+                await TickAsync(stoppingToken);
+            }
+            catch (Exception ex) when (ex is not TaskCanceledException)
+            {
+                logger.LogError(ex, "WeeklySummaryScheduler tick failed");
+            }
+        }
+    }
+
+    private static TimeSpan TimeUntilNextRun(DateTimeOffset now)
+    {
+        var todayTarget = new DateTimeOffset(
+            now.Year, now.Month, now.Day,
+            TargetUtc.Hour, TargetUtc.Minute, 0, TimeSpan.Zero);
+
+        var daysUntilTarget = ((int)TargetDay - (int)now.DayOfWeek + 7) % 7;
+        var nextRun = todayTarget.AddDays(daysUntilTarget);
+
+        if (nextRun <= now) nextRun = nextRun.AddDays(7);
+        return nextRun - now;
+    }
+
+    private async Task TickAsync(CancellationToken ct)
+    {
+        using var scope = scopeFactory.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<JobScoutDbContext>();
+        var email = scope.ServiceProvider.GetRequiredService<IEmailSender>();
+        var appBaseUrl = config["AppBaseUrl"] ?? "http://localhost:5000";
+
         var now = DateTimeOffset.UtcNow;
         var since = now.AddDays(-7).UtcDateTime;
 
         var optedIn = await db.NotificationPreferences
             .Where(p => p.EmailWeeklySummary)
-            .ToListAsync();
+            .ToListAsync(ct);
 
         if (optedIn.Count == 0)
         {
@@ -37,6 +89,8 @@ public class WeeklySummaryFunction(
 
         foreach (var prefs in optedIn)
         {
+            if (ct.IsCancellationRequested) return;
+
             try
             {
                 if (NotificationService.IsWithinQuietHours(prefs, now))
@@ -45,32 +99,30 @@ public class WeeklySummaryFunction(
                     continue;
                 }
 
-                var user = await db.Set<ApplicationUser>().FirstOrDefaultAsync(u => u.Id == prefs.UserId);
-                if (user is null || string.IsNullOrEmpty(user.Email))
-                    continue;
+                var user = await db.Set<ApplicationUser>().FirstOrDefaultAsync(u => u.Id == prefs.UserId, ct);
+                if (user is null || string.IsNullOrEmpty(user.Email)) continue;
 
                 var profileIds = await db.SearchProfiles
                     .Where(p => p.UserId == prefs.UserId)
                     .Select(p => p.Id)
-                    .ToListAsync();
+                    .ToListAsync(ct);
 
-                if (profileIds.Count == 0)
-                    continue;
+                if (profileIds.Count == 0) continue;
 
                 var totalJobs = await db.Jobs
                     .CountAsync(j => j.DiscoveredAt >= since
-                                  && j.AiScores.Any(s => profileIds.Contains(s.ProfileId)));
+                                  && j.AiScores.Any(s => profileIds.Contains(s.ProfileId)), ct);
 
                 var strongFits = await db.AiScores
                     .CountAsync(s => profileIds.Contains(s.ProfileId)
                                   && s.Score >= 8m
-                                  && s.ScoredAt >= since);
+                                  && s.ScoredAt >= since, ct);
 
                 var apps = await db.JobApplications
                     .Where(a => profileIds.Contains(a.ProfileId) && a.AppliedAt >= since)
                     .GroupBy(a => a.Status)
                     .Select(g => new { Status = g.Key, Count = g.Count() })
-                    .ToListAsync();
+                    .ToListAsync(ct);
 
                 int CountFor(ApplicationStatus s) => apps.FirstOrDefault(x => x.Status == s)?.Count ?? 0;
 
@@ -80,7 +132,7 @@ public class WeeklySummaryFunction(
                     where profileIds.Contains(s.ProfileId) && s.ScoredAt >= since
                     orderby s.Score descending
                     select new { Job = j, s.Score }
-                ).Take(5).ToListAsync();
+                ).Take(5).ToListAsync(ct);
 
                 var topJobs = rawTop.Select(x => new DigestJob(x.Job, x.Score)).ToList();
                 var displayName = string.IsNullOrEmpty(user.DisplayName) ? "there" : user.DisplayName;
@@ -103,11 +155,11 @@ public class WeeklySummaryFunction(
                     Subject = tpl.Subject,
                     HtmlBody = tpl.HtmlBody,
                     PlainTextBody = tpl.PlainTextBody
-                });
+                }, ct);
 
                 logger.LogInformation("Weekly summary sent to {Email}", user.Email);
             }
-            catch (Exception ex)
+            catch (Exception ex) when (ex is not TaskCanceledException)
             {
                 logger.LogError(ex, "Weekly summary failed for {UserId}", prefs.UserId);
             }

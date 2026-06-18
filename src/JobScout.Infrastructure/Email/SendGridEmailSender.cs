@@ -1,36 +1,48 @@
 using JobScout.Core.Interfaces;
-using Microsoft.Extensions.Configuration;
+using JobScout.Infrastructure.Configuration;
 using Microsoft.Extensions.Logging;
 using SendGrid;
 using SendGrid.Helpers.Mail;
 
 namespace JobScout.Infrastructure.Email;
 
+/// <summary>
+/// Sends mail via SendGrid when an API key is present in the secret store; otherwise logs
+/// the suppressed message and returns. No-op behavior makes the app safe to run with no
+/// integrations configured — the user can enable email later from the Settings page.
+/// </summary>
 public class SendGridEmailSender : IEmailSender
 {
-    private readonly SendGridClient _client;
-    private readonly EmailAddress _from;
+    private readonly ISecretStore _secrets;
     private readonly ILogger<SendGridEmailSender> _logger;
 
-    public SendGridEmailSender(IConfiguration config, ILogger<SendGridEmailSender> logger)
+    public SendGridEmailSender(ISecretStore secrets, ILogger<SendGridEmailSender> logger)
     {
-        var apiKey = config["SendGrid:ApiKey"]
-            ?? throw new InvalidOperationException("SendGrid:ApiKey is not configured.");
-        var fromAddress = config["SendGrid:FromAddress"] ?? "no-reply@jobscout.local";
-        var fromName = config["SendGrid:FromName"] ?? "JobScout";
-
-        _client = new SendGridClient(apiKey);
-        _from = new EmailAddress(fromAddress, fromName);
+        _secrets = secrets;
         _logger = logger;
     }
 
     public async Task SendAsync(EmailMessage message, CancellationToken ct = default)
     {
+        var apiKey = await _secrets.GetAsync("SendGrid:ApiKey", ct);
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            _logger.LogInformation(
+                "Email suppressed (no SendGrid key) — To: {To}, Subject: {Subject}",
+                message.ToAddress, message.Subject);
+            return;
+        }
+
+        var fromAddress = await _secrets.GetAsync("SendGrid:FromAddress", ct) ?? "no-reply@jobscout.local";
+        var fromName = await _secrets.GetAsync("SendGrid:FromName", ct) ?? "JobScout";
+
+        var client = new SendGridClient(apiKey);
+        var from = new EmailAddress(fromAddress, fromName);
         var to = new EmailAddress(message.ToAddress, message.ToName);
         var mail = MailHelper.CreateSingleEmail(
-            _from, to, message.Subject, message.PlainTextBody, message.HtmlBody);
+            from, to, message.Subject, message.PlainTextBody, message.HtmlBody);
 
-        var response = await _client.SendEmailAsync(mail, ct);
+        var response = await client.SendEmailAsync(mail, ct);
         if (!IsSuccess(response.StatusCode))
         {
             var body = await response.Body.ReadAsStringAsync(ct);

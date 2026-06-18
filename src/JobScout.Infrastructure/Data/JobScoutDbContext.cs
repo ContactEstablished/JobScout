@@ -20,6 +20,7 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<CustomJobSource> CustomJobSources => Set<CustomJobSource>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<NotificationPreferences> NotificationPreferences => Set<NotificationPreferences>();
+    public DbSet<AppSecret> AppSecrets => Set<AppSecret>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -160,6 +161,13 @@ public class JobScoutDbContext : IdentityDbContext<ApplicationUser>
                   .WithOne()
                   .HasForeignKey<NotificationPreferences>(p => p.UserId)
                   .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<AppSecret>(entity =>
+        {
+            entity.HasKey(s => s.Key);
+            entity.Property(s => s.Key).HasMaxLength(128);
+            entity.Property(s => s.EncryptedValue).HasMaxLength(8000);
         });
 
         modelBuilder.Entity<JobApplication>(entity =>

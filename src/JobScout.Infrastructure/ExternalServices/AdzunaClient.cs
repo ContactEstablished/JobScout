@@ -4,14 +4,14 @@ using System.Text.Json.Serialization;
 using JobScout.Core.Enums;
 using JobScout.Core.Interfaces;
 using JobScout.Core.Models;
-using Microsoft.Extensions.Configuration;
+using JobScout.Infrastructure.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace JobScout.Infrastructure.ExternalServices;
 
 public class AdzunaClient(
     HttpClient http,
-    IConfiguration config,
+    ISecretStore secrets,
     ILogger<AdzunaClient> logger) : IJobBoardClient
 {
     public JobSource Source => JobSource.Adzuna;
@@ -25,8 +25,8 @@ public class AdzunaClient(
 
     public async Task<IReadOnlyList<Job>> FetchJobsAsync(SearchProfile profile, CancellationToken ct = default)
     {
-        var appId  = config["Adzuna:AppId"];
-        var appKey = config["Adzuna:AppKey"];
+        var appId  = await secrets.GetAsync("Adzuna:AppId", ct);
+        var appKey = await secrets.GetAsync("Adzuna:AppKey", ct);
 
         if (string.IsNullOrEmpty(appId) || string.IsNullOrEmpty(appKey))
         {

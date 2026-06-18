@@ -1,6 +1,7 @@
 using JobScout.Core.DTOs;
 using JobScout.Core.Interfaces;
 using JobScout.Core.Models;
+using JobScout.Infrastructure.Configuration;
 using JobScout.Infrastructure.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -13,13 +14,29 @@ namespace JobScout.Api.Controllers;
 [Route("api/[controller]")]
 public class SettingsController : ControllerBase
 {
+    private static readonly string[] IntegrationKeys =
+    [
+        "Anthropic:ApiKey",
+        "SerpApi:ApiKey",
+        "Adzuna:AppId",
+        "Adzuna:AppKey",
+        "SendGrid:ApiKey",
+        "SendGrid:FromAddress",
+        "Wellfound:AccessToken",
+    ];
+
     private readonly JobScoutDbContext _db;
     private readonly ICurrentUserService _currentUser;
+    private readonly ISecretStore _secrets;
 
-    public SettingsController(JobScoutDbContext db, ICurrentUserService currentUser)
+    public SettingsController(
+        JobScoutDbContext db,
+        ICurrentUserService currentUser,
+        ISecretStore secrets)
     {
         _db = db;
         _currentUser = currentUser;
+        _secrets = secrets;
     }
 
     [HttpGet("notifications")]
@@ -50,6 +67,44 @@ public class SettingsController : ControllerBase
 
         await _db.SaveChangesAsync();
         return Ok(ToDto(prefs));
+    }
+
+    [HttpGet("integrations")]
+    public async Task<ActionResult<IntegrationSettingsDto>> GetIntegrations()
+    {
+        // Return masked values so secrets never leave the box; the FromAddress is not a secret.
+        var dto = new IntegrationSettingsDto
+        {
+            AnthropicApiKey = Mask(await _secrets.GetAsync("Anthropic:ApiKey")),
+            SerpApiKey = Mask(await _secrets.GetAsync("SerpApi:ApiKey")),
+            AdzunaAppId = Mask(await _secrets.GetAsync("Adzuna:AppId")),
+            AdzunaAppKey = Mask(await _secrets.GetAsync("Adzuna:AppKey")),
+            SendGridApiKey = Mask(await _secrets.GetAsync("SendGrid:ApiKey")),
+            SendGridFromAddress = await _secrets.GetAsync("SendGrid:FromAddress"),
+            WellfoundAccessToken = Mask(await _secrets.GetAsync("Wellfound:AccessToken"))
+        };
+        return Ok(dto);
+    }
+
+    [HttpPut("integrations")]
+    public async Task<IActionResult> UpdateIntegrations([FromBody] IntegrationSettingsDto request)
+    {
+        // Any field left as null is treated as "no change"; empty string clears the value.
+        if (request.AnthropicApiKey is not null) await _secrets.SetAsync("Anthropic:ApiKey", request.AnthropicApiKey);
+        if (request.SerpApiKey is not null) await _secrets.SetAsync("SerpApi:ApiKey", request.SerpApiKey);
+        if (request.AdzunaAppId is not null) await _secrets.SetAsync("Adzuna:AppId", request.AdzunaAppId);
+        if (request.AdzunaAppKey is not null) await _secrets.SetAsync("Adzuna:AppKey", request.AdzunaAppKey);
+        if (request.SendGridApiKey is not null) await _secrets.SetAsync("SendGrid:ApiKey", request.SendGridApiKey);
+        if (request.SendGridFromAddress is not null) await _secrets.SetAsync("SendGrid:FromAddress", request.SendGridFromAddress);
+        if (request.WellfoundAccessToken is not null) await _secrets.SetAsync("Wellfound:AccessToken", request.WellfoundAccessToken);
+        return NoContent();
+    }
+
+    private static string? Mask(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        if (value.Length <= 4) return new string('•', value.Length);
+        return new string('•', Math.Max(4, value.Length - 4)) + value[^4..];
     }
 
     private async Task<NotificationPreferences> GetOrCreateAsync(string userId)

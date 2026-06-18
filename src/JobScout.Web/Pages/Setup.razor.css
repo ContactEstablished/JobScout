@@ -1,0 +1,52 @@
+.setup-card {
+    max-width: 520px;
+}
+
+.setup-stepper {
+    display: flex;
+    gap: 12px;
+    margin: 14px 0 22px;
+    font-size: 0.78rem;
+    color: var(--text-muted, #9a9da8);
+}
+
+.setup-step {
+    flex: 1;
+    text-align: center;
+    padding: 8px 4px;
+    border-bottom: 2px solid var(--surface-border, #2a2c33);
+}
+
+.setup-step.active {
+    color: var(--accent, #6aa6ff);
+    border-bottom-color: var(--accent, #6aa6ff);
+    font-weight: 600;
+}
+
+.setup-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    margin-top: 8px;
+}
+
+.setup-actions .auth-btn {
+    flex: 0 0 auto;
+    min-width: 110px;
+}
+
+.auth-btn.ghost {
+    background: transparent;
+    color: var(--text-muted, #9a9da8);
+    border: 1px solid var(--surface-border, #2a2c33);
+}
+
+.auth-btn.ghost:hover {
+    color: inherit;
+}
+
+.hint {
+    color: var(--text-muted, #9a9da8);
+    font-weight: 400;
+    font-size: 0.8em;
+}

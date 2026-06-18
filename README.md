@@ -1,143 +1,124 @@
 # JobScout
 
-> AI-powered job search aggregator — finds relevant roles across multiple job boards, scores them against your resume, and learns your preferences over time.
+> AI-powered job search aggregator — pulls listings from multiple job boards, scores them against your resume with Claude, and runs entirely on your own machine.
 
-![JobScout Dashboard](docs/screenshots/dashboard.png)
+---
+
+## Quickstart
+
+1. **Install [.NET 10 SDK](https://dotnet.microsoft.com/download)**
+2. **Clone this repo**
+3. **Run the launcher:**
+   - **Windows:** `.\start.ps1`
+   - **macOS / Linux:** `./start.sh`
+
+That's it. The launcher restores packages, applies the database schema, starts the API (which also serves the UI), and opens `http://localhost:5000` in your browser. On the very first run you'll be walked through a three-step setup wizard: account, optional API keys, and your first search profile.
+
+> **Using VS Code?** Open the folder and press `F5`. The launch config builds and runs in one step.
 
 ---
 
 ## What it does
 
-Job hunting involves checking five different sites, reading dozens of descriptions, and trying to remember which ones actually matched your experience. JobScout automates the scanning and lets AI do the first pass so you can focus on the roles that actually matter.
+Job hunting means checking five different sites, reading dozens of descriptions, and remembering which ones matched your experience. JobScout automates the scanning and lets Claude do the first pass so you can focus on the roles that actually matter.
 
-- **Aggregates listings** from LinkedIn (via SerpAPI), RemoteOK, Adzuna, The Muse, and more — all in one feed
-- **Scores each role** against your resume using the Claude AI API (1–10 fit score with reasoning)
+- **Aggregates listings** from RemoteOK, Adzuna, The Muse, LinkedIn / Indeed / Google Jobs (via SerpAPI), Dice, Wellfound, plus any RSS / JSON feed you add
+- **Scores each role** against your resume using the Claude API — overall 1–10 fit plus skills / experience / culture / compensation sub-scores
 - **Learns your taste** — rate jobs 1–5 stars and the AI recalibrates future scoring to match your judgment
-- **Tracks patterns** — see which boards surface the best fits, which days see the most postings, and whether your match rate is trending up or down
-- **Supports multiple profiles** — run separate searches for completely different career paths simultaneously
+- **Tracks applications** — built-in Kanban (Applied → Interviewing → Offered → Accepted)
+- **Notifies you** — bell-icon dropdown for new strong fits, ingestion summaries, and status changes; optional daily / weekly email digests
+- **Supports multiple profiles** — run a "Senior Backend Roles" search and a "Data Science" search in parallel
 
 ---
 
-## Tech stack
+## What you'll need
 
-| Layer | Technology |
+Only one thing is strictly required:
+
+- **.NET 10 SDK** — [download](https://dotnet.microsoft.com/download)
+
+Everything else is optional and can be configured later from the Settings page:
+
+| Service | Why you'd want it |
 |---|---|
-| Frontend | Blazor WebAssembly (.NET 8) |
-| Backend | ASP.NET Core 8 Web API |
-| Database | SQLite (dev) / Azure SQL (prod) |
-| ORM | Entity Framework Core 8 |
-| Scheduling | Azure Functions v4 (timer trigger) |
-| AI scoring | Anthropic Claude API (`claude-sonnet-4`) |
-| Job sources | SerpAPI, Adzuna API, RemoteOK, The Muse |
+| **Anthropic API key** | Powers AI scoring. Without it, every job gets a placeholder score and the AI features are inert. [Get one](https://console.anthropic.com/) |
+| **SerpAPI key** | Unlocks LinkedIn, Indeed, and Google Jobs sources. [Get one](https://serpapi.com/) |
+| **Adzuna credentials** | Unlocks the Adzuna source (app id + app key). [Get one](https://developer.adzuna.com/) |
+| **SendGrid key** | Enables email digests. The in-app notifications work without it. [Get one](https://signup.sendgrid.com/) |
+
+No service is required to get to a working UI — you can run the app with zero keys configured and use it as a notes-and-tracking tool, then add keys later as you decide which sources to enable.
 
 ---
 
-## Features
-
-### AI fit scoring
-Upload your resume (`.docx`, `.pdf`, or `.txt`) or paste your LinkedIn URL. The AI reads the full job description and your resume together and returns a score from 1–10 with a plain-English explanation of why it's a match — or why it isn't.
-
-### User feedback loop
-Rate any job 1–5 stars. Over time, JobScout includes your ratings as calibration examples in the AI prompt, nudging the scoring model toward the kinds of roles you actually want.
-
-### Metrics and trends
-The Trends view surfaces patterns you wouldn't notice manually:
-- Which job board is producing the most relevant fits for you right now
-- Which days and times see the most new postings in your space
-- Whether your overall match rate is improving as the AI calibrates
-
-### Multiple search profiles
-Create a profile per career path. Your "Software Engineering" profile has a different resume and different scoring calibration than your "Freelance Photography" profile. Boards, scores, and metrics are all kept separate.
-
-### Recalibration
-If the AI's taste has drifted from yours, hit Recalibrate. You can do a soft recalibration (re-score existing jobs with your latest ratings factored in) or a hard reset (wipe all scores and start fresh with your current resume).
-
----
-
-## Project structure
+## How it works
 
 ```
-JobScout.sln
+┌──────────────────────────────────────────────────────┐
+│                   localhost:5000                     │
+│                                                      │
+│  ┌─────────────────┐   ┌──────────────────────────┐  │
+│  │ Blazor WASM UI  │   │ ASP.NET Core API + auth  │  │
+│  └─────────────────┘   └──────────────────────────┘  │
+│           ▲                       │                  │
+│           │ same-origin           ▼                  │
+│           │              ┌─────────────────────┐     │
+│           └──────────────│ SQLite + EF Core    │     │
+│                          └─────────────────────┘     │
+│                                   ▲                  │
+│                                   │                  │
+│         ┌─────────────────────────┴─────────────┐    │
+│         │ BackgroundServices                    │    │
+│         │   • Job ingestion every 4 hours       │    │
+│         │   • Daily digest 13:00 UTC            │    │
+│         │   • Weekly summary Mondays 14:00 UTC  │    │
+│         └───────────────────────────────────────┘    │
+└──────────────────────────────────────────────────────┘
+```
+
+One process, one port. No Azure, no Docker, no separate scheduler.
+
+---
+
+## Where your data lives
+
+| What | Where |
+|---|---|
+| **Database (SQLite)** | `~/.jobscout/jobscout.db` (Unix) / `%LOCALAPPDATA%\JobScout\jobscout.db` (Windows) |
+| **API keys & secrets** | Encrypted in the same `jobscout.db` file using ASP.NET Data Protection |
+| **Encryption key ring** | `~/.jobscout/dpapi-keys/` |
+| **JWT signing key** | `~/.jobscout/local.json` (auto-generated on first run) |
+
+Everything lives on your machine. To completely uninstall, delete the JobScout folder above.
+
+---
+
+## Project layout
+
+```
+JobScout/
 ├── src/
-│   ├── JobScout.Web/           # Blazor WebAssembly client
-│   ├── JobScout.Api/           # ASP.NET Core 8 Web API (also serves the WASM app)
-│   ├── JobScout.Core/          # Shared models, DTOs, interfaces
-│   └── JobScout.Infrastructure/# EF Core, repositories, external API clients, AI service
-└── functions/
-    └── JobScout.Functions/     # Azure Functions — timer-triggered job ingestion
+│   ├── JobScout.Core/             # Domain models, DTOs, enums, interfaces
+│   ├── JobScout.Infrastructure/   # EF, job board clients, scoring, schedulers
+│   ├── JobScout.Api/              # ASP.NET Core API — also hosts the Blazor UI
+│   └── JobScout.Web/              # Blazor WebAssembly client
+├── tests/                         # xUnit + bUnit suites (run with `dotnet test`)
+└── start.sh / start.ps1           # Cross-platform launcher scripts
 ```
 
 ---
 
-## Getting started
+## Developing
 
-### Prerequisites
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8)
-- [Azure Functions Core Tools v4](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
-- API keys for [SerpAPI](https://serpapi.com) and [Anthropic](https://console.anthropic.com)
-- (Optional) API credentials for [Adzuna](https://developer.adzuna.com)
-
-### 1. Clone and restore
 ```bash
-git clone https://github.com/ContactEstablished/JobScout.git
-cd JobScout
-dotnet restore
+dotnet build       # build everything
+dotnet test        # run the full test suite (~5 seconds, 93 tests)
+dotnet watch run --project src/JobScout.Api    # hot-reload during development
 ```
 
-### 2. Set API keys via user secrets
-```bash
-cd src/JobScout.Api
-dotnet user-secrets set "SerpApi:ApiKey" "your-key-here"
-dotnet user-secrets set "Anthropic:ApiKey" "your-key-here"
-dotnet user-secrets set "Adzuna:AppId" "your-app-id"
-dotnet user-secrets set "Adzuna:AppKey" "your-app-key"
-```
-
-### 3. Apply database migrations
-```bash
-dotnet ef database update --project src/JobScout.Infrastructure --startup-project src/JobScout.Api
-```
-
-### 4. Run the API and Blazor app
-```bash
-cd src/JobScout.Api
-dotnet run
-```
-The app is served at `https://localhost:7001`. Swagger is available at `/swagger`.
-
-### 5. Run the Azure Function locally (optional)
-```bash
-cd functions/JobScout.Functions
-# Copy local.settings.json.example to local.settings.json and fill in your keys
-func start
-```
-
-> **Note:** RemoteOK requires no API key and is a good first test. The function can be triggered manually via `POST http://localhost:7071/api/ingest?profileId={your-profile-id}`.
-
----
-
-## Configuration reference
-
-All secrets belong in user secrets (local) or Azure App Service → Application Settings (production). Never commit keys.
-
-| Key | Where to get it |
-|---|---|
-| `SerpApi:ApiKey` | [serpapi.com](https://serpapi.com) — free tier includes 100 searches/month |
-| `Anthropic:ApiKey` | [console.anthropic.com](https://console.anthropic.com) |
-| `Adzuna:AppId` / `Adzuna:AppKey` | [developer.adzuna.com](https://developer.adzuna.com) — free |
-
----
-
-## Roadmap
-
-- [ ] LinkedIn profile URL ingestion (parse public profile for resume text)
-- [ ] Email digest — daily summary of top new fits
-- [ ] Application tracker with status stages (Applied → Interviewing → Offer)
-- [ ] Browser extension to rate jobs while browsing LinkedIn directly
-- [ ] Export to CSV / PDF for recruiter sharing
+See [DEVELOPING.md](DEVELOPING.md) for details on adding new migrations, registering new job board clients, and writing tests.
 
 ---
 
 ## License
 
-MIT — see [LICENSE](LICENSE)
+[MIT](LICENSE)

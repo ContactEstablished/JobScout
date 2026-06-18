@@ -5,6 +5,7 @@ using Anthropic.SDK.Extensions;
 using Anthropic.SDK.Messaging;
 using JobScout.Core.Interfaces;
 using JobScout.Core.Models;
+using JobScout.Infrastructure.Configuration;
 using JobScout.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -17,6 +18,7 @@ namespace JobScout.Infrastructure.AI;
 public class ClaudeAiScoringService(
     JobScoutDbContext db,
     IConfiguration config,
+    ISecretStore secrets,
     IAnthropicClientFactory clientFactory,
     INotificationService notifications,
     ILogger<ClaudeAiScoringService> logger) : IAiScoringService
@@ -28,7 +30,7 @@ public class ClaudeAiScoringService(
 
     public async Task<AiScore> ScoreJobAsync(Job job, SearchProfile profile)
     {
-        var apiKey = config["Anthropic:ApiKey"];
+        var apiKey = await secrets.GetAsync("Anthropic:ApiKey");
         if (string.IsNullOrEmpty(apiKey))
         {
             logger.LogWarning("Anthropic API key not configured — returning default score");
@@ -42,7 +44,7 @@ public class ClaudeAiScoringService(
     public async Task<IReadOnlyList<AiScore>> BatchScoreAsync(
         IEnumerable<Job> jobs, SearchProfile profile)
     {
-        var apiKey = config["Anthropic:ApiKey"];
+        var apiKey = await secrets.GetAsync("Anthropic:ApiKey");
         var jobList = jobs.ToList();
         var scores = new List<AiScore>();
         var sem = new SemaphoreSlim(MaxConcurrency);

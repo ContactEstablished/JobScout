@@ -3,21 +3,21 @@ using System.Text.Json.Serialization;
 using JobScout.Core.Enums;
 using JobScout.Core.Interfaces;
 using JobScout.Core.Models;
-using Microsoft.Extensions.Configuration;
+using JobScout.Infrastructure.Configuration;
 using Microsoft.Extensions.Logging;
 
 namespace JobScout.Infrastructure.ExternalServices;
 
 public class SerpApiIndeedClient(
     HttpClient http,
-    IConfiguration config,
+    ISecretStore secrets,
     ILogger<SerpApiIndeedClient> logger) : IJobBoardClient
 {
     public JobSource Source => JobSource.Indeed;
 
     public async Task<IReadOnlyList<Job>> FetchJobsAsync(SearchProfile profile, CancellationToken ct = default)
     {
-        var apiKey = config["SerpApi:ApiKey"];
+        var apiKey = await secrets.GetAsync("SerpApi:ApiKey", ct);
         if (string.IsNullOrEmpty(apiKey))
         {
             logger.LogInformation("SerpAPI key not configured — skipping Indeed");

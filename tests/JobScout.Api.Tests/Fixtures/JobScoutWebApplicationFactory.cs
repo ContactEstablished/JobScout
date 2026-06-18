@@ -19,6 +19,7 @@ public class JobScoutWebApplicationFactory : WebApplicationFactory<Program>
         Environment.SetEnvironmentVariable("Jwt__Issuer", "JobScout.Tests");
         Environment.SetEnvironmentVariable("Jwt__Audience", "JobScout.Tests");
         Environment.SetEnvironmentVariable("ConnectionStrings__DefaultConnection", "DataSource=:memory:");
+        Environment.SetEnvironmentVariable("Scheduling__Enabled", "false");
     }
 
     protected override IHost CreateHost(IHostBuilder builder)
@@ -34,14 +35,11 @@ public class JobScoutWebApplicationFactory : WebApplicationFactory<Program>
         builder.ConfigureServices(services =>
         {
             // Strip out the production SQLite-on-disk registration and replace with our shared in-memory connection.
+            // The production startup will call MigrateAsync against this connection, building a real schema.
             var dbDescriptor = services.SingleOrDefault(d => d.ServiceType == typeof(DbContextOptions<JobScoutDbContext>));
             if (dbDescriptor is not null) services.Remove(dbDescriptor);
 
             services.AddDbContext<JobScoutDbContext>(opt => opt.UseSqlite(_connection));
-
-            using var scope = services.BuildServiceProvider().CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<JobScoutDbContext>();
-            db.Database.EnsureCreated();
         });
     }
 
