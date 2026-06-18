@@ -1,4 +1,6 @@
 using System.Text.Json;
+using JobScout.Core.DTOs;
+using JobScout.Core.Enums;
 using Microsoft.JSInterop;
 
 namespace JobScout.Web.Services;
@@ -87,6 +89,30 @@ public class FilterStateService(IJSRuntime js)
             // Ignore malformed or out-of-date persisted state; fall back to defaults.
         }
     }
+
+    // 9.4.c — hydrate the panel from a saved preset, and capture the current state into a save request.
+    public void LoadFrom(FilterPresetDto preset)
+    {
+        Source = preset.Source?.ToString();
+        MinScore = preset.MinScore;
+        LocationType = preset.LocationType?.ToString();
+        JobType = preset.JobType?.ToString();
+        SearchQuery = preset.Query;
+        SortBy = preset.SortBy.ToString();
+        OnFiltersChanged?.Invoke();
+    }
+
+    public SaveFilterPresetRequest ToSaveRequest(Guid profileId, string name) => new()
+    {
+        ProfileId = profileId,
+        Name = name,
+        Source = Enum.TryParse<JobSource>(Source, out var src) ? src : null,
+        MinScore = MinScore,
+        LocationType = Enum.TryParse<JobScout.Core.Enums.LocationType>(LocationType, out var lt) ? lt : null,
+        JobType = Enum.TryParse<JobScout.Core.Enums.JobType>(JobType, out var jt) ? jt : null,
+        Query = string.IsNullOrEmpty(SearchQuery) ? null : SearchQuery,
+        SortBy = Enum.TryParse<JobSortBy>(SortBy, out var sb) ? sb : JobSortBy.AiScore
+    };
 
     private record FilterSnapshot(
         string? SearchQuery, string? Source, decimal? MinScore,

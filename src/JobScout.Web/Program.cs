@@ -43,6 +43,8 @@ builder.Services.AddHttpClient<ApplicationsService>(c => c.BaseAddress = new Uri
     .AddHttpMessageHandler<AuthTokenHandler>();
 builder.Services.AddHttpClient<NotificationsService>(c => c.BaseAddress = new Uri(apiBaseUrl))
     .AddHttpMessageHandler<AuthTokenHandler>();
+builder.Services.AddHttpClient<FilterPresetsService>(c => c.BaseAddress = new Uri(apiBaseUrl))
+    .AddHttpMessageHandler<AuthTokenHandler>();
 builder.Services.AddHttpClient<SetupService>(c => c.BaseAddress = new Uri(apiBaseUrl));
 
 await builder.Build().RunAsync();
