@@ -39,6 +39,8 @@ public class JobsService(HttpClient http)
             parts.Add($"jobType={Uri.EscapeDataString(filter.JobType)}");
         if (filter?.Query is not null)
             parts.Add($"q={Uri.EscapeDataString(filter.Query)}");
+        if (filter?.SortBy is not null)
+            parts.Add($"sort={Uri.EscapeDataString(filter.SortBy)}");
 
         return string.Join("&", parts);
     }

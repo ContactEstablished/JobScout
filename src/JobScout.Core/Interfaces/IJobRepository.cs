@@ -10,6 +10,7 @@ public class JobFilterOptions
     public LocationType? LocationType { get; set; }
     public JobType? JobType { get; set; }
     public string? Query { get; set; }
+    public JobSortBy SortBy { get; set; } = JobSortBy.AiScore;
 }
 
 public interface IJobRepository

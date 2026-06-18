@@ -28,6 +28,11 @@
                    @onchange="OnSearchChanged"
                    @onkeydown="OnSearchKeyDown" />
         </div>
+        <select class="sort-select" @bind="SortValue" @bind:after="OnSortChanged" title="Sort jobs">
+            <option value="AiScore">Sort: AI Score</option>
+            <option value="PostedDate">Sort: Newest</option>
+            <option value="Company">Sort: Company</option>
+        </select>
         <button class="filter-button" @onclick="Filters.ToggleFilterPanel">
             <i class="ti ti-adjustments-horizontal"></i>
             Filters
@@ -133,6 +138,12 @@
         _          => _jobs
     };
 
+    private string SortValue
+    {
+        get => Filters.SortBy ?? "AiScore";
+        set => Filters.SortBy = value;
+    }
+
     protected override void OnInitialized()
     {
         ProfileState.OnChange += OnProfileChanged;
@@ -142,7 +153,11 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) await ReloadAsync();
+        if (firstRender)
+        {
+            await Filters.LoadAsync();   // restore the persisted view before the first fetch
+            await ReloadAsync();
+        }
     }
 
     private async void OnProfileChanged()
@@ -168,6 +183,7 @@
         _jobs.Clear();
         _page = 1;
         _hasMore = false;
+        await Filters.SaveAsync();   // persist the current view for refresh survival
         await FetchPageAsync();
     }
 
@@ -210,6 +226,8 @@
     {
         if (e.Key == "Enter") await ReloadAsync();
     }
+
+    private async Task OnSortChanged() => await ReloadAsync();
 
     private async Task OnClearFilters()
     {
