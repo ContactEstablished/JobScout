@@ -2,6 +2,8 @@
 
 > AI-powered job search aggregator — pulls listings from multiple job boards, scores them against your resume with Claude, and runs entirely on your own machine.
 
+![JobScout — your AI job-hunting copilot: a scored, ranked job feed with per-role AI fit scores, running locally at localhost:5000](docs/screenshots/hero.png)
+
 ---
 
 ## Quickstart
